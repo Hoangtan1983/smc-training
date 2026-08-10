@@ -27,7 +27,9 @@ async function apiCall(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${BASE_URL}${endpoint}`;
+  // Fix: Đảm bảo endpoint luôn bắt đầu bằng /
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  const url = `${BASE_URL}${cleanEndpoint}`;
 
   try {
     const response = await fetch(url, {

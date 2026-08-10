@@ -23,7 +23,9 @@ export default function AdminAgencies() {
     setError(null);
     try {
       const res = await api.getAgencies();
-      setAgencies(res.data || res.agencies || []);
+      // API trả về array trực tiếp (không wrap trong {data} hay {agencies})
+      const list = Array.isArray(res) ? res : (res.data || res.agencies || []);
+      setAgencies(list);
     } catch (err) {
       setError(err.message || 'Không thể tải danh sách đại lý.');
       toast.error('Không thể tải danh sách đại lý.');
