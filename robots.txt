@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /staff/
+Disallow: /teacher/
+Disallow: /student/
+Disallow: /dashboard/
+
+Sitemap: https://smc-training.com/sitemap.xml

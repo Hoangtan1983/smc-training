@@ -1,0 +1,60 @@
+# SMC Training - SPA rewrite + Security Headers
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Block access to sensitive files
+  RewriteRule ^api/data/ - [F,L]
+  RewriteRule ^api/backups/ - [F,L]
+
+  # API routes — rewrite /api/... to PHP files
+  # Don't rewrite actual PHP files
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^api/(.+)$ api/auth.php?action=$1 [QSA,L]
+
+  # Block access to hidden files
+  RewriteCond %{REQUEST_URI} \.
+  RewriteRule ^\. - [F,L]
+
+  # SPA fallback
+  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteCond %{REQUEST_URI} !^/robots\.txt$
+  RewriteCond %{REQUEST_URI} !^/sitemap\.xml$
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^(.*)$ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Content Security Policy (strict, không dùng unsafe-inline/unsafe-eval)
+  Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://smc-training.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+
+  # Security Headers
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Resource-Policy "same-origin"
+
+  # Hide server info
+  Header always unset X-Powered-By
+  Header always unset Server
+</IfModule>
+
+# Block access to sensitive files
+<FilesMatch "\.(env|env\.php|log|json\.bak|sql|md|phar)$">
+  Require all denied
+</FilesMatch>
+
+# Block dangerous PHP files
+<FilesMatch "^(test-|debug-|fix-|migrate-|setup-|rebuild-|restore-|cleanup-|sync-|quick-|_test)">
+  Require all denied
+</FilesMatch>
+
+# Block access to hidden files
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
