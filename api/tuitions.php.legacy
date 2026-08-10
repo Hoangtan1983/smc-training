@@ -1,0 +1,617 @@
+<?php
+/**
+ * SMC Training — Tuitions API v2
+ * Endpoint: /api/tuitions.php
+ * Xử lý: config, list, students, report, my, add, activate
+ */
+
+date_default_timezone_set('Asia/Ho_Chi_Minh');
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: https://smc-training.com');
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+
+// ── Token helpers (standalone — không include helpers.php để tránh conflict) ──
+function getTokenFromRequest() {
+    if (!empty($_COOKIE['smc_token'])) return $_COOKIE['smc_token'];
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    return str_replace('Bearer ', '', $header);
+}
+
+$envFile = __DIR__ . '/env.php';
+$env = (file_exists($envFile) && is_array($cfg = include $envFile)) ? $cfg : [];
+$secretKey = $env['SECRET_KEY'] ?? getenv('SMC_SECRET_KEY') ?: 'fallback-dev-key';
+
+function verifyToken($token) {
+    global $secretKey;
+    $parts = explode('.', $token);
+    // Support both auth.php JWT (3-part: header.payload.sig) and legacy (2-part: payload.sig)
+    if (count($parts) === 3) {
+        // Standard JWT: base64url encoded header.payload.signature
+        $header = json_decode(base64_decode(strtr($parts[0], '-_', '+/')), true);
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+        if (!$payload || ($payload['exp'] ?? 0) < time()) return null;
+        $sig = hash_hmac('sha256', $parts[0] . '.' . $parts[1], $secretKey, true);
+        $sigInput = base64_decode(strtr($parts[2], '-_', '+/'));
+        return hash_equals($sig, $sigInput) ? $payload : null;
+    }
+    if (count($parts) === 2) {
+        // Legacy format: base64(payload).hmac
+        list($payload, $sig) = $parts;
+        if (!hash_equals(hash_hmac('sha256', $payload, $secretKey), $sig)) return null;
+        return json_decode(base64_decode($payload), true);
+    }
+    return null;
+}
+
+function authenticate() {
+    $token = getTokenFromRequest();
+    if (!$token) return null;
+    return verifyToken($token);
+}
+
+function requireRole($roles) {
+    $auth = authenticate();
+    if (!$auth) { http_response_code(401); echo json_encode(['error'=>'Unauthorized']); exit; }
+    if (!in_array($auth['role'], $roles)) { http_response_code(403); echo json_encode(['error'=>'Forbidden']); exit; }
+    return $auth;
+}
+
+function jsonResponse($data, $code=200) {
+    http_response_code($code);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ── Data Store ──
+$dataDir = __DIR__ . '/data';
+function loadData($file) {
+    global $dataDir;
+    $path = $dataDir . '/' . $file . '.json';
+    if (!file_exists($path)) return [];
+    return json_decode(file_get_contents($path), true) ?: [];
+}
+function saveData($file, $data) {
+    global $dataDir;
+    $path = $dataDir . '/' . $file . '.json';
+    $tmp = $path . '.tmp.' . getmypid();
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    file_put_contents($tmp, $json, LOCK_EX);
+    return rename($tmp, $path);
+}
+
+// ── Routing ──
+$method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
+
+// ── CONFIG (trả về danh sách khóa học + cài đặt) ──
+if ($action === 'config') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    $courses = loadData('courses');
+    jsonResponse([
+        'success' => true,
+        'data' => [
+            'courses' => $courses,
+            'settings' => ['auto_activate_on_threshold' => true],
+        ],
+    ]);
+}
+
+// ── STUDENTS (danh sách học viên cho dropdown) ──
+if ($action === 'students') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    $users = loadData('users');
+    $result = [];
+    foreach ($users as $u) {
+        if (($u['role'] ?? '') === 'STUDENT') {
+            $result[] = ['id' => $u['id'], 'fullName' => $u['fullName'], 'email' => $u['email'] ?? '', 'phone' => $u['phone'] ?? '', 'status' => $u['status'] ?? ''];
+        }
+    }
+    jsonResponse(['success' => true, 'data' => $result]);
+}
+
+// ── LIST (danh sách học phí với computed fields) ──
+if ($action === 'list') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    $tuitions = loadData('tuitions');
+    $users = loadData('users');
+    $courses = loadData('courses');
+    $agencies = loadData('agencies');
+
+    // ── Build course lookup (same as report) ──
+    $courseById = [];
+    $courseByLegacy = [];
+    foreach ($courses as $c) {
+        $courseById[$c['id'] ?? ''] = $c;
+        if (!empty($c['legacy_id'])) $courseByLegacy[$c['legacy_id']] = $c;
+    }
+
+    // ── Build agency lookup ──
+    $agencyById = [];
+    foreach ($agencies as $a) {
+        $agencyById[$a['id'] ?? ''] = $a;
+    }
+
+    $result = [];
+    foreach ($tuitions as $t) {
+        $sid = $t['studentId'] ?? '';
+        $student = null;
+        foreach ($users as $u) { if ($u['id'] === $sid) { $student = $u; break; } }
+
+        $cid = $t['courseId'] ?? '';
+        $course = null;
+        // 1. Exact ID match (new format)
+        if ($cid && isset($courseById[$cid])) $course = $courseById[$cid];
+        // 2. Legacy ID match (c001/c002/c003)
+        if (!$course && $cid && isset($courseByLegacy[$cid])) $course = $courseByLegacy[$cid];
+
+        $coursePrice = (int)($course['price'] ?? $t['amount'] ?? 0);
+        $baseAmount = (int)($t['baseAmount'] ?? $coursePrice);
+        $actualAmount = (int)($t['amount'] ?? $coursePrice);
+        $totalPaid = (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+        if (($t['status'] ?? '') === 'paid') $totalPaid = $baseAmount;
+        $totalDue = max(0, $baseAmount - $totalPaid);
+
+        // ── Agency info ──
+        $studentAgencyId = $student['agencyId'] ?? $t['agencyId'] ?? '';
+        $agency = $studentAgencyId ? ($agencyById[$studentAgencyId] ?? null) : null;
+        $agencyDiscountPercent = (float)($agency['discountPercent'] ?? $t['discountPercent'] ?? 0);
+        $discountAmount = $baseAmount - $actualAmount;
+
+        $result[] = [
+            'id' => $t['id'] ?? '',
+            'student_id' => $sid,
+            'student_name' => $t['studentName'] ?? ($student['fullName'] ?? ''),
+            'course_id' => $cid,
+            'course_name' => $t['courseName'] ?? ($course['name'] ?? ''),
+            'course_price' => $coursePrice,
+            'base_amount' => $baseAmount,
+            'actual_amount' => $actualAmount,
+            'discount_percent' => $agencyDiscountPercent,
+            'discount_amount' => $discountAmount,
+            'total_paid' => $totalPaid,
+            'total_due' => $totalDue,
+            'status' => $t['status'] ?? 'unpaid',
+            'step' => $t['step'] ?? 'pending',
+            'installments' => $t['paymentHistory'] ?? [],
+            'is_activated' => ($student['status'] ?? '') === 'ACTIVE',
+            'student_status' => $student['status'] ?? '',
+            'payment_method' => $t['paymentMethod'] ?? '',
+            'paid_date' => $t['paidDate'] ?? null,
+            'due_date' => $t['dueDate'] ?? null,
+            'note' => $t['note'] ?? '',
+            'agency_id' => $studentAgencyId,
+            'agency_name' => $agency['name'] ?? '',
+            'agency_discount_percent' => $agencyDiscountPercent,
+            'discount_note' => $agencyDiscountPercent > 0 ? ('CK Đại lý ' . $agencyDiscountPercent . '% = ' . number_format($discountAmount) . ' ₫') : '',
+        ];
+    }
+    jsonResponse(['success' => true, 'data' => $result]);
+}
+
+// ── REPORT (thống kê doanh thu — đã sửa để đồng bộ course ID cũ/mới) ──
+if ($action === 'report') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    $tuitions = loadData('tuitions');
+    $users = loadData('users');
+    $courses = loadData('courses');
+
+    // ── Build course lookup ──
+    $courseById = [];
+    $courseByLegacy = [];
+    $courseByNameKeyword = [];
+    foreach ($courses as $c) {
+        $cid = $c['id'] ?? '';
+        $courseById[$cid] = $c;
+        if (!empty($c['legacy_id'])) $courseByLegacy[$c['legacy_id']] = $c;
+        $cname = mb_strtolower(trim($c['name'] ?? ''));
+        if (strpos($cname, 'bvlos') !== false || strpos($cname, 'hạng b') !== false) {
+            $courseByNameKeyword['bvlos'] = $c;
+        } elseif (strpos($cname, 'vlos') !== false || strpos($cname, 'hạng a') !== false) {
+            $courseByNameKeyword['vlos'] = $c;
+        }
+    }
+
+    // Clean orphans
+    $validUserIds = [];
+    foreach ($users as $u) { $validUserIds[$u['id']] = true; }
+    $before = count($tuitions);
+    $tuitions = array_values(array_filter($tuitions, fn($t) => isset($validUserIds[$t['studentId'] ?? ''])));
+    if (count($tuitions) < $before) saveData('tuitions', $tuitions);
+
+    // ── Resolve course ──
+    $resolveCourse = function($t) use ($courseById, $courseByLegacy, $courseByNameKeyword, $courses) {
+        $cid = $t['courseId'] ?? '';
+        // 1. Exact ID
+        if ($cid && isset($courseById[$cid])) return $courseById[$cid];
+        // 2. Legacy ID
+        if ($cid && isset($courseByLegacy[$cid])) return $courseByLegacy[$cid];
+        // 3. Name match
+        $cname = mb_strtolower(trim($t['courseName'] ?? ''));
+        if ($cname) {
+            foreach ($courses as $c) {
+                if (mb_strtolower(trim($c['name'] ?? '')) === $cname) return $c;
+            }
+        }
+        // 4. Keyword fallback
+        if ($cid === 'c001') return $courseByNameKeyword['vlos'] ?? null;
+        if ($cid === 'c002' || $cid === 'c003') return $courseByNameKeyword['bvlos'] ?? null;
+        return null;
+    };
+
+    // ── Get group name ──
+    $getGroupName = function($course) {
+        if (!$course) return 'Chưa xác định';
+        $n = mb_strtolower($course['name'] ?? '');
+        if (strpos($n, 'bvlos') !== false || strpos($n, 'hạng b') !== false) return 'BVLOS (Hạng B)';
+        if (strpos($n, 'vlos') !== false || strpos($n, 'hạng a') !== false) return 'VLOS (Hạng A)';
+        return $course['name'] ?? 'Khóa học';
+    };
+
+    $totalReceived = 0;
+    $totalDue = 0;
+    $totalStudents = 0;
+    $activatedCount = 0;
+    $seenStudents = [];
+    $courseStudents = [];
+    $byCourse = [];
+
+    foreach ($tuitions as $t) {
+        $sid = $t['studentId'] ?? '';
+        $course = $resolveCourse($t);
+        $groupName = $getGroupName($course);
+
+        $price = (int)($course['price'] ?? $t['amount'] ?? 0);
+        $paid = (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+        if (($t['status'] ?? '') === 'paid') $paid = $price;
+        $due = max(0, $price - $paid);
+
+        $totalReceived += $paid;
+        $totalDue += $due;
+
+        if (!isset($seenStudents[$sid])) {
+            $seenStudents[$sid] = true;
+            $totalStudents++;
+            foreach ($users as $u) {
+                if ($u['id'] === $sid && ($u['status'] ?? '') === 'ACTIVE') { $activatedCount++; break; }
+            }
+        }
+
+        if (!isset($byCourse[$groupName])) {
+            $byCourse[$groupName] = ['name' => $groupName, 'students' => 0, 'received' => 0, 'due' => 0];
+        }
+        $byCourse[$groupName]['received'] += $paid;
+        $byCourse[$groupName]['due'] += $due;
+
+        if (!isset($courseStudents[$groupName])) $courseStudents[$groupName] = [];
+        $courseStudents[$groupName][$sid] = true;
+    }
+
+    foreach ($byCourse as $gn => &$bc) {
+        $bc['students'] = isset($courseStudents[$gn]) ? count($courseStudents[$gn]) : 0;
+    }
+    unset($bc);
+
+    jsonResponse([
+        'success' => true,
+        'data' => [
+            'total_received' => $totalReceived,
+            'total_received_fmt' => number_format($totalReceived) . ' ₫',
+            'total_due' => $totalDue,
+            'total_due_fmt' => number_format($totalDue) . ' ₫',
+            'total_students' => $totalStudents,
+            'activated_count' => $activatedCount,
+            'by_course' => $byCourse,
+        ],
+    ]);
+}
+
+// ── MY (Student xem học phí của mình) ──
+if ($action === 'my') {
+    $auth = authenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+    $tuitions = loadData('tuitions');
+    $courses = loadData('courses');
+    $agencies = loadData('agencies');
+    $mine = [];
+    // Build course lookup
+    $courseById2 = []; $courseByLegacy2 = [];
+    foreach ($courses as $c) { $courseById2[$c['id'] ?? ''] = $c; if (!empty($c['legacy_id'])) $courseByLegacy2[$c['legacy_id']] = $c; }
+    // Build agency lookup
+    $agencyById2 = [];
+    foreach ($agencies as $a) { $agencyById2[$a['id'] ?? ''] = $a; }
+
+    foreach ($tuitions as $t) {
+        if (($t['studentId'] ?? '') !== $auth['id']) continue;
+        $cid2 = $t['courseId'] ?? '';
+        $course = null;
+        if ($cid2 && isset($courseById2[$cid2])) $course = $courseById2[$cid2];
+        if (!$course && $cid2 && isset($courseByLegacy2[$cid2])) $course = $courseByLegacy2[$cid2];
+        $coursePrice = (int)($course['price'] ?? $t['amount'] ?? 0);
+        $baseAmount = (int)($t['baseAmount'] ?? $coursePrice);
+        $actualAmount = (int)($t['amount'] ?? $coursePrice);
+        $totalPaid = (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+        if (($t['status'] ?? '') === 'paid') $totalPaid = $baseAmount;
+        $totalDue = max(0, $baseAmount - $totalPaid);
+
+        // Agency info
+        $myAgencyId = $t['agencyId'] ?? '';
+        $myAgency = $myAgencyId ? ($agencyById2[$myAgencyId] ?? null) : null;
+        $myDiscountPercent = (float)($myAgency['discountPercent'] ?? $t['discountPercent'] ?? 0);
+        $myDiscountAmount = $baseAmount - $actualAmount;
+
+        $mine[] = [
+            'id' => $t['id'] ?? '', 'course_id' => $t['courseId'] ?? '',
+            'course_name' => $t['courseName'] ?? ($course['name'] ?? ''),
+            'course_price' => $coursePrice,
+            'base_amount' => $baseAmount,
+            'actual_amount' => $actualAmount,
+            'discount_percent' => $myDiscountPercent,
+            'discount_amount' => $myDiscountAmount,
+            'total_paid' => $totalPaid,
+            'total_due' => $totalDue, 'status' => $t['status'] ?? 'unpaid',
+            'step' => $t['step'] ?? 'pending', 'installments' => $t['paymentHistory'] ?? [],
+            'due_date' => $t['dueDate'] ?? null, 'paid_date' => $t['paidDate'] ?? null,
+            'note' => $t['note'] ?? '',
+            'agency_id' => $myAgencyId,
+            'agency_name' => $myAgency['name'] ?? '',
+            'discount_note' => $myDiscountPercent > 0 ? ('Chiết khấu đại lý ' . $myDiscountPercent . '%: -' . number_format($myDiscountAmount) . ' ₫') : '',
+        ];
+    }
+    jsonResponse(['success' => true, 'data' => $mine]);
+}
+
+// ── ADD (Staff thêm khoản thu) ──
+// @deprecated — Mọi xử lý thanh toán nên dùng POST /api/auth.php?action=admin/process-payment
+if ($action === 'add') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    if ($method !== 'POST') jsonResponse(['error' => 'POST required'], 405);
+
+    $input = jsonInput();
+    function jsonInput() { return json_decode(file_get_contents('php://input'), true) ?: []; }
+
+    $studentId = $input['student_id'] ?? '';
+    $studentName = $input['student_name'] ?? '';
+    $courseId = $input['course_id'] ?? '';
+    $courseName = $input['course_name'] ?? '';
+    $amount = (int)($input['amount'] ?? 0);
+    $paymentMethod = $input['payment_method'] ?? 'bank_transfer';
+    $bankRef = $input['bank_ref'] ?? '';
+    $note = $input['note'] ?? '';
+    $threshold = (int)($input['activation_threshold_percent'] ?? 50);
+
+    if (!$studentId || !$courseId || !$amount) {
+        jsonResponse(['error' => 'Thiếu thông tin: student_id, course_id, amount'], 400);
+    }
+
+    // ── Resolve agency metadata ──
+    $users = loadData('users');
+    $courses = loadData('courses');
+    $agencies = loadData('agencies');
+    $student = null;
+    foreach ($users as $u) { if ($u['id'] === $studentId) { $student = $u; break; } }
+    $course = null;
+    foreach ($courses as $c) { if ($c['id'] === $courseId) { $course = $c; break; } }
+    $coursePrice = (int)($course['price'] ?? $amount);
+    $agencyId = $student['agencyId'] ?? '';
+    $agency = null;
+    $discountPercent = 0;
+    if ($agencyId) {
+        foreach ($agencies as $a) { if ($a['id'] === $agencyId) { $agency = $a; break; } }
+        $discountPercent = (float)($agency['discountPercent'] ?? 0);
+    }
+    $baseAmount = $coursePrice;
+    $actualAmount = $amount;
+
+    $tuitions = loadData('tuitions');
+    $now = date('c');
+    $totalPaid = $amount;
+    $autoActivated = false;
+    $found = false;
+
+    foreach ($tuitions as &$t) {
+        if (($t['studentId'] ?? '') === $studentId && ($t['courseId'] ?? '') === $courseId) {
+            $history = $t['paymentHistory'] ?? [];
+            $history[] = ['date' => $now, 'amount' => $amount, 'method' => $paymentMethod, 'bank_ref' => $bankRef, 'note' => $note, 'recorded_by' => $auth['id']];
+            $prevPaid = (int)($t['partialAmount'] ?? 0);
+            $totalPaid = $prevPaid + $amount;
+            $t['partialAmount'] = $totalPaid;
+            $t['paymentHistory'] = $history;
+            $t['paymentMethod'] = $paymentMethod;
+            $t['note'] = $note;
+            $t['updatedAt'] = $now;
+            $t['updatedBy'] = $auth['id'];
+            // Agency metadata (preserve if already set)
+            if (!isset($t['baseAmount'])) $t['baseAmount'] = $baseAmount;
+            if (!isset($t['discountPercent'])) $t['discountPercent'] = $discountPercent;
+            if (!isset($t['agencyId']) && $agencyId) $t['agencyId'] = $agencyId;
+
+            $existingAmount = (int)($t['amount'] ?? 0);
+            if ($existingAmount === 0 || $amount > $existingAmount) $t['amount'] = $amount;
+            $tuitionAmount = (int)($t['amount'] ?? 0);
+
+            $isPaidInFull = $totalPaid >= $tuitionAmount;
+            $thresholdAmount = (int)($tuitionAmount * $threshold / 100);
+            if ($totalPaid >= $thresholdAmount) {
+                $t['step'] = 'active';
+                $t['status'] = $isPaidInFull ? 'paid' : 'partial';
+                $t['paidDate'] = $now;
+                if (!$isPaidInFull) {
+                    $t['dueDate'] = date('c', strtotime('+14 days'));
+                } else {
+                    $t['dueDate'] = null;
+                }
+
+                $users = loadData('users');
+                foreach ($users as &$u) {
+                    if ($u['id'] === $studentId && ($u['status'] ?? '') !== 'ACTIVE') {
+                        $u['status'] = 'ACTIVE';
+                        $u['activatedBy'] = $auth['id'];
+                        $u['activatedAt'] = $now;
+                        $autoActivated = true;
+                        break;
+                    }
+                }
+                unset($u);
+                saveData('users', $users);
+
+                // ── Tạo enrollment nếu chưa có (đồng bộ liên thông) ──
+                $enrollments = loadData('enrollments');
+                $hasEnr = false;
+                foreach ($enrollments as &$enr) {
+                    if (($enr['student_id'] ?? '') === $studentId) {
+                        $hasEnr = true;
+                        if (empty($enr['course_id'])) { $enr['course_id'] = $courseId; $enr['course_name'] = $courseName; }
+                        // Fix: enrollment payment status theo đúng isPaidInFull
+                        $enr['payment'] = [
+                            'amount' => (int)$tuitionAmount,
+                            'paid' => (int)$totalPaid,
+                            'status' => $isPaidInFull ? 'paid' : 'partial',
+                            'method' => $paymentMethod,
+                            'date' => $now,
+                            'confirmed_by' => $auth['id'],
+                        ];
+                        $enr['status'] = 'active';
+                        break;
+                    }
+                }
+                unset($enr);
+                if (!$hasEnr) {
+                    $enrollments[] = [
+                        'student_id' => $studentId, 'class_id' => '',
+                        'course_id' => $courseId, 'course_name' => $courseName,
+                        'documents' => [
+                            'id_card' => ['status' => 'pending', 'url' => ''],
+                            'health_cert' => ['status' => 'pending', 'url' => ''],
+                            'education' => ['status' => 'pending', 'url' => ''],
+                        ],
+                        'payment' => ['amount' => (int)$tuitionAmount, 'paid' => (int)$totalPaid, 'status' => $isPaidInFull ? 'paid' : 'partial', 'method' => $paymentMethod, 'date' => $now, 'confirmed_by' => $auth['id']],
+                        'status' => 'active', 'confirmed_by' => $auth['id'], 'confirmed_at' => $now,
+                        'stages' => [
+                            'enrollment' => ['status' => 'completed', 'completed_at' => $now, 'confirmed_by' => $auth['id']],
+                            'theory' => ['status' => 'pending', 'completed_at' => null, 'confirmed_by' => null],
+                            'practice' => ['status' => 'pending', 'completed_at' => null, 'confirmed_by' => null],
+                            'exam' => ['status' => 'pending', 'completed_at' => null, 'confirmed_by' => null],
+                            'certification' => ['status' => 'pending', 'completed_at' => null, 'confirmed_by' => null],
+                        ],
+                    ];
+                }
+                saveData('enrollments', $enrollments);
+            } else {
+                // Dưới ngưỡng: set dueDate
+                if (!isset($t['dueDate']) || !$t['dueDate']) {
+                    $t['dueDate'] = date('c', strtotime('+14 days'));
+                }
+            }
+            $found = true;
+            break;
+        }
+    }
+    unset($t);
+
+    if (!$found) {
+        $thresholdAmount = (int)($amount * $threshold / 100);
+        $isPaidInFullNew = $amount >= $coursePrice;
+        $newStep = $amount >= $thresholdAmount ? 'active' : 'partial';
+        $newStatus = $isPaidInFullNew ? 'paid' : ($amount >= $thresholdAmount ? 'partial' : 'unpaid');
+        $tuitions[] = [
+            'id' => 'tuition-' . bin2hex(random_bytes(6)), 'studentId' => $studentId,
+            'studentName' => $studentName, 'courseId' => $courseId, 'courseName' => $courseName,
+            'amount' => $actualAmount, 'partialAmount' => $amount, 'step' => $newStep, 'status' => $newStatus,
+            'paymentMethod' => $paymentMethod, 'paymentAmount' => $amount,
+            'paidDate' => $amount >= $thresholdAmount ? $now : null,
+            'dueDate' => $isPaidInFullNew ? null : date('c', strtotime('+14 days')),
+            'baseAmount' => $baseAmount, 'discountPercent' => $discountPercent, 'agencyId' => $agencyId,
+            'note' => $note, 'confirmedBy' => $auth['id'],
+            'paymentHistory' => [[ 'date' => $now, 'amount' => $amount, 'method' => $paymentMethod, 'bank_ref' => $bankRef, 'note' => $note, 'recorded_by' => $auth['id'] ]],
+            'createdAt' => $now, 'updatedAt' => $now, 'updatedBy' => $auth['id'],
+        ];
+        if ($amount >= $thresholdAmount) {
+            $users = loadData('users');
+            foreach ($users as &$u) {
+                if ($u['id'] === $studentId && ($u['status'] ?? '') !== 'ACTIVE') {
+                    $u['status'] = 'ACTIVE'; $u['activatedBy'] = $auth['id']; $u['activatedAt'] = $now;
+                    $autoActivated = true; break;
+                }
+            }
+            unset($u);
+            saveData('users', $users);
+
+            // ── Tạo enrollment ──
+            $enrollments = loadData('enrollments');
+            $hasEnr = false;
+            foreach ($enrollments as $enr) { if (($enr['student_id'] ?? '') === $studentId) { $hasEnr = true; break; } }
+            if (!$hasEnr) {
+                $enrollments[] = [
+                    'student_id' => $studentId, 'class_id' => '',
+                    'course_id' => $courseId, 'course_name' => $courseName,
+                    'documents' => ['id_card' => ['status'=>'pending','url'=>''], 'health_cert' => ['status'=>'pending','url'=>''], 'education' => ['status'=>'pending','url'=>'']],
+                    'payment' => ['amount'=>(int)$actualAmount, 'paid'=>(int)$amount, 'status'=>$isPaidInFullNew ? 'paid' : 'partial', 'method'=>$paymentMethod, 'date'=>$now, 'confirmed_by'=>$auth['id']],
+                    'status' => 'active', 'confirmed_by' => $auth['id'], 'confirmed_at' => $now,
+                    'stages' => ['enrollment'=>['status'=>'completed','completed_at'=>$now,'confirmed_by'=>$auth['id']], 'theory'=>['status'=>'pending'], 'practice'=>['status'=>'pending'], 'exam'=>['status'=>'pending'], 'certification'=>['status'=>'pending']],
+                ];
+            }
+            saveData('enrollments', $enrollments);
+        }
+    }
+
+    saveData('tuitions', $tuitions);
+    $remainingAmount = $actualAmount - ($totalPaid ?? $amount);
+    jsonResponse([
+        'success' => true,
+        'message' => $autoActivated ? 'Đã ghi nhận khoản thu & tự động kích hoạt tài khoản!' : 'Đã ghi nhận khoản thu thành công!',
+        'data' => ['amount' => $amount, 'course_price' => $actualAmount, 'total_paid' => $totalPaid, 'remaining' => max(0, $remainingAmount), 'auto_activated' => $autoActivated, 'threshold_percent' => $threshold],
+    ]);
+}
+
+// ── ACTIVATE (toggle kích hoạt/tạm khóa) ──
+if ($action === 'activate') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    if ($method !== 'POST') jsonResponse(['error' => 'POST required'], 405);
+    $input = jsonInput();
+    $studentId = $input['student_id'] ?? '';
+    $activate = (bool)($input['activate'] ?? true);
+    if (!$studentId) jsonResponse(['error' => 'Thiếu student_id'], 400);
+
+    $users = loadData('users');
+    foreach ($users as &$u) {
+        if ($u['id'] === $studentId) {
+            $u['status'] = $activate ? 'ACTIVE' : 'FROZEN';
+            $u[$activate ? 'activatedAt' : 'frozenAt'] = date('c');
+            $u[$activate ? 'activatedBy' : 'frozenBy'] = $auth['id'];
+            break;
+        }
+    }
+    unset($u);
+    saveData('users', $users);
+
+    $tuitions = loadData('tuitions');
+    foreach ($tuitions as &$t) {
+        if (($t['studentId'] ?? '') === $studentId) {
+            $t['step'] = $activate ? 'active' : 'frozen';
+            $t['status'] = $activate ? (($t['partialAmount'] ?? 0) >= ($t['amount'] ?? 0) ? 'paid' : 'partial') : 'frozen';
+            break;
+        }
+    }
+    unset($t);
+    saveData('tuitions', $tuitions);
+
+    // Đồng bộ enrollment status
+    $enrollments = loadData('enrollments');
+    foreach ($enrollments as &$enr) {
+        if (($enr['student_id'] ?? '') === $studentId) {
+            $enr['status'] = $activate ? 'active' : 'frozen';
+            break;
+        }
+    }
+    unset($enr);
+    saveData('enrollments', $enrollments);
+
+    jsonResponse(['success' => true, 'message' => $activate ? 'Đã kích hoạt tài khoản học viên!' : 'Đã tạm khóa tài khoản học viên!']);
+}
+
+// Fallback
+jsonResponse(['error' => 'Unknown action: ' . $action], 400);

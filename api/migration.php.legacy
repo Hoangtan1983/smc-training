@@ -1,0 +1,269 @@
+<?php
+/**
+ * SMC Training — Migration từ JSON sang MySQL
+ *
+ * CÁCH DÙNG:
+ *   1. Tạo database trong Plesk: smc_training (MySQL/MariaDB)
+ *   2. Import schema: mysql -u user -p smc_training < database/schema.sql
+ *   3. Sửa api/env.php — thêm DB credentials
+ *   4. Chạy script này: php api/migration.php
+ *
+ * Script sẽ:
+ *   - Đọc toàn bộ data từ api/data/*.json
+ *   - Insert vào MySQL tables tương ứng
+ *   - Verify số lượng records
+ */
+
+// ── Load config ──
+$envFile = __DIR__ . '/env.php';
+$env = (file_exists($envFile) && is_array($cfg = include $envFile)) ? $cfg : [];
+
+$dbHost = $env['DB_HOST'] ?? 'localhost';
+$dbName = $env['DB_NAME'] ?? 'smc_training';
+$dbUser = $env['DB_USER'] ?? 'smc46189';
+$dbPass = $env['DB_PASS'] ?? '';
+
+// ── Connect MySQL ──
+try {
+    $pdo = new PDO(
+        "mysql:host={$dbHost};dbname={$dbName};charset=utf8mb4",
+        $dbUser,
+        $dbPass,
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]
+    );
+    echo "✓ Connected to MySQL: {$dbName}\n";
+} catch (PDOException $e) {
+    die("✗ MySQL connection failed: " . $e->getMessage() . "\n");
+}
+
+// ── Load JSON data ──
+$dataDir = __DIR__ . '/data';
+$collections = ['users', 'courses', 'classes', 'enrollments', 'attendance',
+                'exams', 'fly_logs', 'certifications', 'tuitions',
+                'registrations', 'change_requests', 'uploaded_files',
+                'payment_receipts', 'password_resets'];
+
+$data = [];
+foreach ($collections as $col) {
+    $file = $dataDir . '/' . $col . '.json';
+    if (file_exists($file)) {
+        $content = json_decode(file_get_contents($file), true);
+        $data[$col] = is_array($content) ? $content : [];
+        echo "  Loaded {$col}: " . count($data[$col]) . " records\n";
+    } else {
+        $data[$col] = [];
+        echo "  Skipped {$col}: file not found\n";
+    }
+}
+
+echo "\n=== Bắt đầu migration ===\n\n";
+
+// ── 1. Users ──
+$count = 0;
+$stmt = $pdo->prepare("INSERT IGNORE INTO users (id, email, password, role, fullName, phone, status, courseId, approvedBy, approvedAt, activatedBy, activatedAt, passwordChangedAt, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+foreach ($data['users'] as $u) {
+    $stmt->execute([
+        $u['id'],
+        $u['email'] ?? '',
+        $u['password'] ?? '',
+        $u['role'] ?? 'STUDENT',
+        $u['fullName'] ?? '',
+        $u['phone'] ?? '',
+        $u['status'] ?? 'PENDING',
+        $u['courseId'] ?? null,
+        $u['approvedBy'] ?? null,
+        isset($u['approvedAt']) ? date('Y-m-d H:i:s', strtotime($u['approvedAt'])) : null,
+        $u['activatedBy'] ?? null,
+        isset($u['activatedAt']) ? date('Y-m-d H:i:s', strtotime($u['activatedAt'])) : null,
+        isset($u['passwordChangedAt']) ? date('Y-m-d H:i:s', strtotime($u['passwordChangedAt'])) : null,
+        isset($u['createdAt']) ? date('Y-m-d H:i:s', strtotime($u['createdAt'])) : date('Y-m-d H:i:s'),
+    ]);
+    $count++;
+}
+echo "✓ Users: {$count} records migrated\n";
+
+// ── 2. Courses ──
+$count = 0;
+$stmtCourse = $pdo->prepare("INSERT IGNORE INTO courses (id, name, code, category, total_hours_theory, total_hours_practice, min_fly_hours, price, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$stmtModule = $pdo->prepare("INSERT IGNORE INTO course_modules (id, course_id, name, hours_theory, hours_practice, sort_order) VALUES (?, ?, ?, ?, ?, ?)");
+
+foreach ($data['courses'] as $c) {
+    $stmtCourse->execute([
+        $c['id'],
+        $c['name'] ?? '',
+        $c['code'] ?? '',
+        $c['category'] ?? '',
+        $c['total_hours_theory'] ?? 0,
+        $c['total_hours_practice'] ?? 0,
+        $c['min_fly_hours'] ?? 0,
+        $c['price'] ?? 0,
+        $c['status'] ?? 'active',
+        isset($c['createdAt']) ? date('Y-m-d H:i:s', strtotime($c['createdAt'])) : date('Y-m-d H:i:s'),
+    ]);
+    $count++;
+
+    // Modules
+    foreach ($c['modules'] ?? [] as $idx => $m) {
+        $stmtModule->execute([
+            $m['id'],
+            $c['id'],
+            $m['name'] ?? '',
+            $m['hours_theory'] ?? 0,
+            $m['hours_practice'] ?? 0,
+            $idx,
+        ]);
+    }
+}
+echo "✓ Courses: {$count} records migrated (with modules)\n";
+
+// ── 3. Classes ──
+$count = 0;
+$stmtCls = $pdo->prepare("INSERT IGNORE INTO classes (id, course_id, name, teacher_id, max_students, start_date, end_date, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$stmtSch = $pdo->prepare("INSERT IGNORE INTO class_schedules (class_id, day, time, type, location) VALUES (?, ?, ?, ?, ?)");
+$stmtCS = $pdo->prepare("INSERT IGNORE INTO class_students (class_id, student_id) VALUES (?, ?)");
+
+foreach ($data['classes'] as $cl) {
+    $stmtCls->execute([
+        $cl['id'],
+        $cl['course_id'] ?? '',
+        $cl['name'] ?? '',
+        $cl['teacher_id'] ?? null,
+        $cl['max_students'] ?? 20,
+        $cl['start_date'] ?? null,
+        $cl['end_date'] ?? null,
+        $cl['status'] ?? 'active',
+        isset($cl['createdAt']) ? date('Y-m-d H:i:s', strtotime($cl['createdAt'])) : date('Y-m-d H:i:s'),
+    ]);
+    $count++;
+
+    // Schedules
+    foreach ($cl['schedule'] ?? [] as $sch) {
+        $stmtSch->execute([$cl['id'], $sch['day'] ?? '', $sch['time'] ?? '', $sch['type'] ?? 'theory', $sch['location'] ?? '']);
+    }
+
+    // Students
+    foreach ($cl['student_ids'] ?? [] as $sid) {
+        $stmtCS->execute([$cl['id'], $sid]);
+    }
+}
+echo "✓ Classes: {$count} records migrated (with schedules & students)\n";
+
+// ── 4. Tuitions ──
+$count = 0;
+$stmtT = $pdo->prepare("INSERT IGNORE INTO tuitions (id, studentId, studentName, courseId, courseName, amount, partialAmount, step, status, paymentMethod, paymentReceipt, paymentNote, paymentAmount, paymentSubmittedAt, paidDate, dueDate, confirmedBy, note, createdAt, updatedBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+foreach ($data['tuitions'] as $t) {
+    $stmtT->execute([
+        $t['id'] ?? '',
+        $t['studentId'] ?? '',
+        $t['studentName'] ?? '',
+        $t['courseId'] ?? '',
+        $t['courseName'] ?? '',
+        $t['amount'] ?? 0,
+        $t['partialAmount'] ?? 0,
+        $t['step'] ?? 'pending',
+        $t['status'] ?? 'unpaid',
+        $t['paymentMethod'] ?? '',
+        $t['paymentReceipt'] ?? null,
+        $t['paymentNote'] ?? '',
+        $t['paymentAmount'] ?? 0,
+        isset($t['paymentSubmittedAt']) ? date('Y-m-d H:i:s', strtotime($t['paymentSubmittedAt'])) : null,
+        isset($t['paidDate']) ? date('Y-m-d H:i:s', strtotime($t['paidDate'])) : null,
+        isset($t['dueDate']) ? date('Y-m-d H:i:s', strtotime($t['dueDate'])) : null,
+        $t['confirmedBy'] ?? null,
+        $t['note'] ?? '',
+        isset($t['createdAt']) ? date('Y-m-d H:i:s', strtotime($t['createdAt'])) : date('Y-m-d H:i:s'),
+        $t['updatedBy'] ?? null,
+    ]);
+    $count++;
+}
+echo "✓ Tuitions: {$count} records migrated\n";
+
+// ── 5. Enrollments ──
+$count = 0;
+$stmtE = $pdo->prepare("INSERT INTO enrollments (student_id, class_id, course_id, course_name, status, confirmed_by, confirmed_at, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+$stmtStage = $pdo->prepare("INSERT IGNORE INTO enrollment_stages (enrollment_id, stage, status, completed_at, confirmed_by) VALUES (?, ?, ?, ?, ?)");
+$stmtDoc = $pdo->prepare("INSERT IGNORE INTO enrollment_documents (enrollment_id, doc_type, status, url) VALUES (?, ?, ?, ?)");
+
+foreach ($data['enrollments'] as $e) {
+    $stmtE->execute([
+        $e['student_id'] ?? '',
+        $e['class_id'] ?? null,
+        $e['course_id'] ?? null,
+        $e['course_name'] ?? '',
+        $e['status'] ?? 'active',
+        $e['confirmed_by'] ?? null,
+        isset($e['confirmed_at']) ? date('Y-m-d H:i:s', strtotime($e['confirmed_at'])) : null,
+        date('Y-m-d H:i:s'),
+    ]);
+    $enrollmentId = $pdo->lastInsertId();
+    $count++;
+
+    // Stages
+    foreach ($e['stages'] ?? [] as $stage => $info) {
+        $stmtStage->execute([
+            $enrollmentId,
+            $stage,
+            $info['status'] ?? 'pending',
+            isset($info['completed_at']) ? date('Y-m-d H:i:s', strtotime($info['completed_at'])) : null,
+            $info['confirmed_by'] ?? null,
+        ]);
+    }
+
+    // Documents
+    foreach ($e['documents'] ?? [] as $docType => $info) {
+        $stmtDoc->execute([
+            $enrollmentId,
+            $docType,
+            $info['status'] ?? 'pending',
+            $info['url'] ?? '',
+        ]);
+    }
+}
+echo "✓ Enrollments: {$count} records migrated (with stages & documents)\n";
+
+// ── 6. Exams ──
+$count = 0;
+$stmtEx = $pdo->prepare("INSERT IGNORE INTO exams (id, course_id, module_id, title, duration_minutes, pass_score, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)");
+$stmtEq = $pdo->prepare("INSERT INTO exam_questions (exam_id, question, options, answer, sort_order) VALUES (?, ?, ?, ?, ?)");
+
+foreach ($data['exams'] as $ex) {
+    $stmtEx->execute([
+        $ex['id'],
+        $ex['course_id'] ?? null,
+        $ex['module_id'] ?? null,
+        $ex['title'] ?? '',
+        $ex['duration_minutes'] ?? 30,
+        $ex['pass_score'] ?? 70,
+        date('Y-m-d H:i:s'),
+    ]);
+    $count++;
+
+    // Questions
+    foreach ($ex['questions'] ?? [] as $idx => $q) {
+        $stmtEq->execute([
+            $ex['id'],
+            $q['q'] ?? $q['question'] ?? '',
+            json_encode($q['options'] ?? [], JSON_UNESCAPED_UNICODE),
+            $q['answer'] ?? 0,
+            $idx,
+        ]);
+    }
+
+    // Results
+    foreach ($ex['results'] ?? [] as $r) {
+        // insert into exam_results...
+    }
+}
+echo "✓ Exams: {$count} records migrated (with questions)\n";
+
+// ── Summary ──
+echo "\n=== Migration Complete ===\n";
+echo "Total tables populated: users, courses, course_modules, classes, class_schedules, class_students, tuitions, enrollments, enrollment_stages, enrollment_documents, exams, exam_questions\n";
+echo "\n💡 Next steps:\n";
+echo "  1. Verify data in phpMyAdmin / MySQL\n";
+echo "  2. Update auth.php to use MySQL (switch loadData/saveData to PDO)\n";
+echo "  3. Test all endpoints\n";
+echo "  4. Keep JSON files as backup for 30 days\n";

@@ -1,55 +1,14 @@
-# Dependencies
+.vercel
 node_modules/
-.pnp
-.pnp.js
-
-# Build output (giữ lại trong hosting, không cần trong repo)
 dist/
-assets/*.js
-assets/*.css
-!assets/app.css
-!assets/app.js
-!assets/index.css
-!assets/index.js
-!assets/style.css
-
-# Data (dữ liệu thật — không commit)
-api/data/
-api/backups/
-
-# Lỗi dev cũ (các file .legacy)
-*.legacy
-
-# Environment
+api/.env.php
 api/env.php
-.env
-.env.*
-!.env.example
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Logs
+api/data/*.json
+api/data/ratelimit/
+api/backups/
+api/uploads/
 *.log
-logs/
-
-# ZIP/tmp files
-*.zip
-*.tmp
-*.bak
-
-# Database
-*.sqlite
-
-# File đính kèm lớn
-tai-lieu/
-
-# Sensitive
-*.json.bak
+.DS_Store
+deploy-to-server/
+.env
+.env.local

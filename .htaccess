@@ -1,60 +1,96 @@
-# SMC Training - SPA rewrite + Security Headers
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
+RewriteEngine On
 
-  # Block access to sensitive files
-  RewriteRule ^api/data/ - [F,L]
-  RewriteRule ^api/backups/ - [F,L]
+# Ưu tiên index.html
+DirectoryIndex index.html
 
-  # API routes — rewrite /api/... to PHP files
-  # Don't rewrite actual PHP files
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteRule ^api/(.+)$ api/auth.php?action=$1 [QSA,L]
+# ── Force HTTPS (nếu có SSL) ──
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
 
-  # Block access to hidden files
-  RewriteCond %{REQUEST_URI} \.
-  RewriteRule ^\. - [F,L]
-
-  # SPA fallback
-  RewriteCond %{REQUEST_URI} !^/api/
-  RewriteCond %{REQUEST_URI} !^/robots\.txt$
-  RewriteCond %{REQUEST_URI} !^/sitemap\.xml$
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^(.*)$ index.html [L]
-</IfModule>
-
+# ── Security Headers ──
 <IfModule mod_headers.c>
-  # Content Security Policy (strict, không dùng unsafe-inline/unsafe-eval)
-  Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://smc-training.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+    # HTTP Strict Transport Security (HSTS) — 2 năm, bao gồm subdomains
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 
-  # Security Headers
-  Header always set X-Content-Type-Options "nosniff"
-  Header always set X-Frame-Options "SAMEORIGIN"
-  Header always set X-XSS-Protection "1; mode=block"
-  Header always set Referrer-Policy "strict-origin-when-cross-origin"
-  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
-  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
-  Header always set Cross-Origin-Opener-Policy "same-origin"
-  Header always set Cross-Origin-Resource-Policy "same-origin"
+    # Ngăn trình duyệt MIME-type sniffing
+    Header always set X-Content-Type-Options "nosniff"
 
-  # Hide server info
-  Header always unset X-Powered-By
-  Header always unset Server
+    # XSS Protection (legacy browsers)
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Ngăn hiển thị trong iframe từ domain khác
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Giới hạn thông tin referrer
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Permissions Policy — giới hạn quyền truy cập API trình duyệt
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+
+    # Content Security Policy (không unsafe-inline, không unsafe-eval)
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://smc-training.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+
+    # Cross-Origin isolation headers
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always set Cross-Origin-Resource-Policy "same-origin"
+
+    # Cache static assets for 1 year (KHÔNG cache .xml)
+    <FilesMatch "\.(ico|pdf|jpg|jpeg|png|gif|svg|webp|js|css|woff2?)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+
+    # Never cache HTML, PHP, and sitemap/robots
+    <FilesMatch "\.(html|php|xml|txt)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
 </IfModule>
 
-# Block access to sensitive files
-<FilesMatch "\.(env|env\.php|log|json\.bak|sql|md|phar)$">
+# Bảo vệ thư mục data
+RewriteRule ^api/data/ - [F,L]
+
+# Bảo vệ thư mục backups
+RewriteRule ^api/backups/ - [F,L]
+
+# Bảo vệ thư mục uploads khỏi direct linking
+RewriteRule ^api/uploads/ - [F,L]
+
+# API routes — rewrite /api/... -> api/auth.php?action=...
+# QUAN TRỌNG: Dùng QSA để giữ lại POST data
+# Bỏ qua file PHP thật (backup.php, tuitions.php...) — chỉ rewrite request không phải file thật
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^api/(.+)$ api/auth.php?action=$1 [QSA,L]
+
+# Bảo vệ file môi trường & cấu hình (chặn mọi pattern: .env.php, .env, env.php, auth-lib.php)
+<FilesMatch "(^\.env|^env\.php|^\.env\.|^auth-lib\.php)">
   Require all denied
 </FilesMatch>
 
-# Block dangerous PHP files
-<FilesMatch "^(test-|debug-|fix-|migrate-|setup-|rebuild-|restore-|cleanup-|sync-|quick-|_test)">
+# Bảo vệ file cấu hình khác
+<FilesMatch "^(composer\.json|composer\.lock|package\.json|package-lock\.json)$">
   Require all denied
 </FilesMatch>
 
-# Block access to hidden files
+# Chặn directory listing
+Options -Indexes
+
+# Chặn truy cập file ẩn
 <FilesMatch "^\.">
   Require all denied
 </FilesMatch>
+
+# Không cho Plesk dùng error_docs mặc định — luôn fallback về index.html (SPA)
+ErrorDocument 404 /index.html
+ErrorDocument 500 /index.html
+
+# SPA fallback — tất cả request không khớp file/dir thật -> index.html
+# QUAN TRỌNG: TUYỆT ĐỐI không bắt /api/* để PHP backend hoạt động
+# robots.txt và sitemap.xml phải được phục vụ từ file vật lý
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteCond %{REQUEST_URI} !^/robots\.txt$
+RewriteCond %{REQUEST_URI} !^/sitemap\.xml$
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.html [L]
