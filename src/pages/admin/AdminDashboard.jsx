@@ -76,6 +76,15 @@ export default function AdminDashboard() {
     );
   }
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   const roleBadge = (role) => {
     const map = {
       ADMIN: 'bg-purple-100 text-purple-700',
@@ -156,7 +165,7 @@ export default function AdminDashboard() {
                       </td>
                       <td>
                         <span className={`badge ${roleBadge(user.role)}`}>
-                          {user.role}
+                          {roleLabels[user.role] || user.role}
                         </span>
                       </td>
                       <td>

@@ -1804,7 +1804,7 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
 }
 
 // ── Data endpoints ──
-$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions'];
+$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions', 'agencies', 'agency_commissions'];
 
 foreach ($dataRoutes as $route) {
     $matches = ($parts[0] ?? '') === $route || (($parts[0] ?? '') === 'auth' && ($parts[1] ?? '') === $route);

@@ -105,7 +105,7 @@ export function forgotPassword(email) {
 // ─── Users ─────────────────────────────────────────
 export function getUsers(params = {}) {
   const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=list${qs ? '&' + qs : ''}`);
+  return apiCall(`/api/auth.php?action=users${qs ? '&' + qs : ''}`);
 }
 
 export function getUser(id) {

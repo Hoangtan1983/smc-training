@@ -33,6 +33,15 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Mobile overlay */}
@@ -52,7 +61,7 @@ export default function AdminLayout() {
         {/* Logo */}
         <div className="h-16 flex items-center gap-2.5 px-5 border-b border-gray-100">
           <img src="/logo.png" alt="SMC" className="h-8 w-auto" />
-          <span className="text-lg font-extrabold text-gray-900 tracking-tight">SMC Admin</span>
+          <span className="text-lg font-extrabold text-gray-900 tracking-tight">SMC Quản trị</span>
         </div>
 
         {/* Nav */}
@@ -117,11 +126,11 @@ export default function AdminLayout() {
 
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || 'Admin'}</p>
-              <p className="text-xs text-gray-500">Quản trị viên</p>
+              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || ''}</p>
+              <p className="text-xs text-gray-500">{roleLabels[user?.role] || user?.role || ''}</p>
             </div>
             <div className="w-9 h-9 rounded-full bg-smc-500 flex items-center justify-center text-white text-sm font-bold">
-              {(user?.fullName || user?.full_name || user?.name || 'A')[0].toUpperCase()}
+              {(user?.fullName || user?.full_name || user?.name || 'U')[0].toUpperCase()}
             </div>
           </div>
         </header>

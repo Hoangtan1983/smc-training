@@ -24,6 +24,15 @@ export default function AccountantLayout() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-50">
       {sidebarOpen && (
@@ -76,11 +85,11 @@ export default function AccountantLayout() {
           <div className="flex-1" />
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || 'Accountant'}</p>
-              <p className="text-xs text-gray-500">Kế toán</p>
+              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || ''}</p>
+              <p className="text-xs text-gray-500">{roleLabels[user?.role] || user?.role || ''}</p>
             </div>
             <div className="w-9 h-9 rounded-full bg-ios-purple flex items-center justify-center text-white text-sm font-bold">
-              {(user?.fullName || user?.full_name || user?.name || 'K')[0].toUpperCase()}
+              {(user?.fullName || user?.full_name || user?.name || 'U')[0].toUpperCase()}
             </div>
           </div>
         </header>

@@ -28,6 +28,15 @@ export default function AgencyDashboard() {
   const [recentStudents, setRecentStudents] = useState([]);
   const [monthlyCommissions, setMonthlyCommissions] = useState([]);
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -113,7 +122,7 @@ export default function AgencyDashboard() {
 
   return (
     <div className="page-container">
-      <PageHeader title="Bảng điều khiển" subtitle={`Xin chào, ${user?.fullName || user?.name || 'Đại lý'}`} />
+      <PageHeader title="Bảng điều khiển" subtitle={`Xin chào, ${user?.fullName || user?.name || roleLabels[user?.role] || ''}`} />
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

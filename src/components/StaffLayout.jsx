@@ -34,6 +34,15 @@ export default function StaffLayout() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-50">
       {sidebarOpen && (
@@ -43,7 +52,7 @@ export default function StaffLayout() {
       <aside className={`fixed top-0 left-0 bottom-0 z-50 w-64 bg-white border-r border-gray-100 flex flex-col transition-transform duration-300 lg:translate-x-0 lg:static lg:z-auto ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="h-16 flex items-center gap-2.5 px-5 border-b border-gray-100">
           <img src="/logo.png" alt="SMC" className="h-8 w-auto" />
-          <span className="text-lg font-extrabold text-gray-900 tracking-tight">SMC Staff</span>
+          <span className="text-lg font-extrabold text-gray-900 tracking-tight">SMC Nhân viên</span>
         </div>
 
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
@@ -86,11 +95,11 @@ export default function StaffLayout() {
           <div className="flex-1" />
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || 'Staff'}</p>
-              <p className="text-xs text-gray-500">Nhân viên</p>
+              <p className="text-sm font-semibold text-gray-900">{user?.fullName || user?.full_name || user?.name || ''}</p>
+              <p className="text-xs text-gray-500">{roleLabels[user?.role] || user?.role || ''}</p>
             </div>
             <div className="w-9 h-9 rounded-full bg-smc-500 flex items-center justify-center text-white text-sm font-bold">
-              {(user?.fullName || user?.full_name || user?.name || 'S')[0].toUpperCase()}
+              {(user?.fullName || user?.full_name || user?.name || 'U')[0].toUpperCase()}
             </div>
           </div>
         </header>

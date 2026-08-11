@@ -15,6 +15,15 @@ export default function TeacherDashboard() {
   const [classes, setClasses] = useState([]);
   const [todaySchedule, setTodaySchedule] = useState([]);
 
+  const roleLabels = {
+    ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học viên',
+    AGENCY: 'Đại lý',
+    ACCOUNTANT: 'Kế toán',
+  };
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -116,7 +125,7 @@ export default function TeacherDashboard() {
     <div className="page-container">
       <PageHeader
         title="Bảng điều khiển"
-        subtitle={`Chào mừng, ${user?.fullName || user?.full_name || user?.name || 'Giảng viên'}`}
+        subtitle={`Chào mừng, ${user?.fullName || user?.full_name || user?.name || roleLabels[user?.role] || ''}`}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

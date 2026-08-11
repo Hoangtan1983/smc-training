@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""
+SỬA TOÀN BỘ DỮ LIỆU HỌC PHÍ — FINAL v3
+
+Phân tích chính xác từng invoice dựa trên backup:
+
+Có 2 loại transaction:
+  A. PT-2026000XX: transaction gốc (25tr hoặc 15tr) — hợp lệ
+  B. PT20260805T00XXX1785923XXX: batch 10tr ngày 05/08 — hợp lệ với 1 số invoice,
+     NHƯNG bị trùng với các invoice đã có transaction gốc 25tr đủ
+  C. txn-XXXXXXXX: bank_transfer 15tr — hợp lệ, nhưng studentId bị SAI (cross-wired)
+
+Logic xử lý:
+  1. Sửa studentId trong 13 txn bank_transfer
+  2. Với mỗi invoice: tính tổng confirmed transactions
+     - Nếu tổng > basePrice: chỉ xóa transaction thừa để tổng = basePrice (ưu tiên giữ txn gốc/bank, xóa batch 10tr trước)
+     - Nếu tổng = basePrice: giữ nguyên
+     - Nếu tổng < basePrice: giữ nguyên (học viên chưa nộp đủ)
+
+PHÂN TÍCH TỪNG INVOICE:
+- Invoice #8 (Bùi Trung Dũng): PT20260805T0008X (10tr, cash, đúng sid) + txn-45f6... (15tr, bank, sai sid) = 25tr = bp ✅ CHỈ SỬA sid
+- Invoice #1 (Phạm Nguyễn): PT-202600001 (25tr) + PT20260805T0001X (10tr) = 35tr > 25tr → XÓA batch 10tr
+- Invoice #2 (Nguyễn Quang Mạnh): PT-202600002 (25tr) + PT20260805T0002X (10tr) = 35tr > 25tr → XÓA batch 10tr
+- Invoice #3 (Võ Phát Tài): PT-202600003 (25tr) + PT-202600004 (25tr) + PT20260805T0003X (10tr) = 60tr → GIỮ 1 txn 25tr, XÓA 35tr còn lại
+- Invoice #4 (Võ Tiến Phát): PT-202600005 (25tr) + PT20260805T0004X (10tr) = 35tr → XÓA batch 10tr
+- Invoice #16-18, #24-26, #28-29: tương tự: giữ txn gốc, xóa batch 10tr
+- Invoice #27 (Nguyễn Ngọc Bình): PT-202600015 (15tr) + txn-89c8... (10tr bank, sai sid) + txn-5727... (10tr cash, đúng sid) = 35tr → GIỮ 15tr + 10tr bank = 25tr, XÓA cash 10tr
+- Invoice #30 (Huỳnh Thông Thương): PT-202600018 (15tr) + PT-202600019 (15tr) = 30tr → GIỮ 1 txn 15tr, XÓA cái kia
+- Invoice #31 (Trần Nguyễn Thảo Nguyên): PT-202600020 (15tr) + PT-202600021 (10.8tr) = 25.8tr → GIỮ 1 txn 15tr, XÓA 10.8tr
+"""
+
+import json
+
+BASE = '/Users/hoangtan/Desktop/Phần mềm/smc-training/api/data'
+
+def load(fn):
+    with open(f'{BASE}/{fn}', 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save(fn, data):
+    with open(f'{BASE}/{fn}', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def main():
+    invoices = load('invoices.json')
+    transactions = load('transactions.json')
+    enrollments = load('enrollments.json')
+    users = load('users.json')
+
+    user_by_id = {u['id']: u for u in users}
+    invoice_map = {inv['id']: inv for inv in invoices}
+
+    stats = {'fixed_sid': 0, 'deleted': 0}
+
+    # ── STEP 1: Sửa studentId trong 13 bank_transfer ──
+    for txn in transactions:
+        inv = invoice_map.get(txn.get('invoiceId', ''))
+        if inv:
+            correct_sid = inv.get('studentId', '')
+            if txn.get('studentId') != correct_sid:
+                old_name = user_by_id.get(txn.get('studentId', ''), {}).get('fullName', '?')
+                new_name = inv.get('studentName', '?')
+                print(f'  ✏️ SỬA {txn["id"]}: studentId {old_name} → {new_name}')
+                txn['studentId'] = correct_sid
+                stats['fixed_sid'] += 1
+
+    # ── STEP 2: Xác định transaction cần xóa ──
+    to_delete = set()
+
+    # Nhóm transactions theo invoice
+    txn_by_inv = {}
+    for txn in transactions:
+        txn_by_inv.setdefault(txn.get('invoiceId', ''), []).append(txn)
+
+    for inv_id, txns in txn_by_inv.items():
+        inv = invoice_map.get(inv_id)
+        if not inv:
+            continue
+        bp = int(inv.get('basePrice', 0))
+
+        # Chỉ xét confirmed transactions
+        confirmed = [t for t in txns if t.get('status') == 'confirmed']
+        confirmed.sort(key=lambda t: (t.get('createdAt', '') or ''))  # sort by time
+
+        total = sum(int(t.get('amount', 0)) for t in confirmed)
+
+        if total <= bp:
+            continue  # Không cần xóa gì
+
+        # Tổng > basePrice → cần xóa bớt
+        # Ưu tiên xóa: batch 10tr (PT20260805T00...) > duplicate gốc > bank_transfer thừa
+        # Luôn giữ đủ để đạt basePrice
+
+        # Phân loại
+        batch_10m = [t for t in confirmed if 'PT20260805T00' in t['id']]
+        originals = [t for t in confirmed if t['id'].startswith('PT-20260')]
+        banks = [t for t in confirmed if t['id'].startswith('txn-') and t.get('method') == 'bank_transfer']
+        cash_extra = [t for t in confirmed if t['id'].startswith('txn-') and t.get('method') == 'cash']
+
+        remaining_total = total
+        candidates_to_delete = []
+
+        # Priority 1: batch 10tr (migrate lỗi)
+        for t in batch_10m:
+            if remaining_total - int(t.get('amount', 0)) >= bp:
+                candidates_to_delete.append(t['id'])
+                remaining_total -= int(t.get('amount', 0))
+
+        # Priority 2: cash_extra
+        for t in cash_extra:
+            if remaining_total - int(t.get('amount', 0)) >= bp:
+                candidates_to_delete.append(t['id'])
+                remaining_total -= int(t.get('amount', 0))
+
+        # Priority 3: duplicate originals (giữ cái đầu tiên)
+        if remaining_total > bp and len(originals) > 1:
+            for t in originals[1:]:
+                if remaining_total - int(t.get('amount', 0)) >= bp:
+                    candidates_to_delete.append(t['id'])
+                    remaining_total -= int(t.get('amount', 0))
+
+        # Priority 4: bank_transfer thừa
+        for t in banks:
+            if remaining_total - int(t.get('amount', 0)) >= bp:
+                candidates_to_delete.append(t['id'])
+                remaining_total -= int(t.get('amount', 0))
+
+        for tid in candidates_to_delete:
+            txn = next(t for t in confirmed if t['id'] == tid)
+            to_delete.add(tid)
+            stats['deleted'] += 1
+            print(f'  🗑️ XÓA {tid}: {txn["amount"]}đ (invoice #{inv_id} {inv.get("studentName")}, tổng {total}→{remaining_total}đ)')
+
+    # ── STEP 3: Thực hiện xóa ──
+    transactions = [t for t in transactions if t['id'] not in to_delete]
+
+    # ── STEP 4: Recalc invoices ──
+    txn_by_inv_final = {}
+    for txn in transactions:
+        if txn.get('status') == 'confirmed':
+            txn_by_inv_final.setdefault(txn.get('invoiceId', ''), []).append(txn)
+
+    inv_updated = 0
+    for inv in invoices:
+        if inv.get('status') == 'exempt':
+            inv['totalPaid'] = 0
+            inv['remainingDue'] = 0
+            inv['finalPrice'] = 0
+            inv['transactionCount'] = 0
+            continue
+
+        bp = int(inv.get('basePrice', 0))
+        confirmed = txn_by_inv_final.get(inv['id'], [])
+        raw_total = sum(int(t.get('amount', 0)) for t in confirmed)
+        total_paid = min(raw_total, bp)
+        remaining = max(0, bp - total_paid)
+
+        old_paid = int(inv.get('totalPaid', 0))
+        old_due = int(inv.get('remainingDue', 0))
+        old_status = inv.get('status', '')
+
+        inv['totalPaid'] = total_paid
+        inv['remainingDue'] = remaining
+        inv['status'] = 'paid' if total_paid >= bp else ('partial' if total_paid > 0 else 'pending')
+        inv['transactionCount'] = len(confirmed)
+        inv['lastTransaction'] = confirmed[-1] if confirmed else None
+        if inv.get('note') and 'Đã thu đủ' in str(inv.get('note', '')) and total_paid < bp:
+            inv['note'] = inv['note'].replace('Đã thu đủ', 'Đang thu').replace('25.000.000đ', f'{total_paid:,}đ').replace(',', '.')
+
+        if old_paid != total_paid or old_due != remaining or old_status != inv['status']:
+            print(f'  📊 #{inv["id"]} ({inv.get("studentName")}): {old_paid:,}→{total_paid:,}đ | {old_due:,}→{remaining:,}đ | {old_status}→{inv["status"]}')
+            inv_updated += 1
+
+    # ── STEP 5: Đồng bộ enrollments ──
+    enr_updated = 0
+    for e in enrollments:
+        for inv in invoices:
+            if inv.get('studentId') == e.get('student_id') and inv.get('courseId') == e.get('course_id'):
+                tp = int(inv.get('totalPaid', 0))
+                bp = int(inv.get('basePrice', 0))
+                op = e.get('paid_amount', 0)
+                e['paid_amount'] = tp
+                e['remaining_amount'] = max(0, bp - tp)
+                e['payment_status'] = 'fully_paid' if tp >= bp else ('partial' if tp > 0 else 'pending')
+                e['eligible_for_exam'] = (tp >= bp)
+                e['updated_at'] = '2026-08-10T18:00:00+07:00'
+                if op != tp:
+                    print(f'  🔄 ENR {e.get("enrollment_code")} ({inv.get("studentName")}): paid {op:,}→{tp:,}đ')
+                    enr_updated += 1
+                break
+
+    # ── Save ──
+    save('transactions.json', transactions)
+    save('invoices.json', invoices)
+    save('enrollments.json', enrollments)
+
+    # ── Final Report ──
+    print(f'\n{"="*60}')
+    print(f'✅ HOÀN THÀNH')
+    print(f'  • Sửa studentId: {stats["fixed_sid"]}')
+    print(f'  • Xóa transaction thừa: {stats["deleted"]}')
+    print(f'  • Còn lại: {len(transactions)} transactions')
+    print(f'  • Invoice cập nhật: {inv_updated}')
+    print(f'  • Enrollment đồng bộ: {enr_updated}')
+
+    # Verification
+    errors = []
+    for txn in transactions:
+        inv = invoice_map.get(txn.get('invoiceId', ''))
+        if inv and txn.get('studentId') != inv.get('studentId', ''):
+            errors.append(f'  ❌ {txn["id"]}: sid mismatch')
+    for inv in invoices:
+        if inv.get('status') == 'exempt':
+            continue
+        bp = int(inv.get('basePrice', 0))
+        tp = int(inv.get('totalPaid', 0))
+        rd = int(inv.get('remainingDue', 0))
+        if tp + rd != bp:
+            errors.append(f'  ❌ #{inv["id"]} ({inv["studentName"]}): {tp}+{rd} != {bp}')
+        if tp > bp:
+            errors.append(f'  ❌ #{inv["id"]} ({inv["studentName"]}): totalPaid {tp} > basePrice {bp}')
+
+    if errors:
+        print(f'\n⚠️ {len(errors)} LỖI:')
+        for e in errors:
+            print(e)
+    else:
+        print('\n✅ VERIFIED: Không còn lỗi!')
+
+    # Bảng tổng kết
+    print(f'\n📊 BẢNG TỔNG KẾT TOÀN BỘ INVOICE:')
+    print(f'{"ID":8s} {"Học viên":32s} {"Học phí":>12s} {"Đã nộp":>12s} {"Còn thiếu":>12s} {"Trạng thái":16s} {"#Txn":5s}')
+    print('-' * 110)
+    for inv in invoices:
+        bp = int(inv.get('basePrice', 0))
+        tp = int(inv.get('totalPaid', 0))
+        rd = int(inv.get('remainingDue', 0))
+        st = inv.get('status', '?')
+        n_txn = len(txn_by_inv_final.get(inv['id'], []))
+        emoji = '✅' if tp >= bp else ('⏳' if tp > 0 else '❌')
+        print(f'{emoji} {inv["id"]:6s} {inv["studentName"]:32s} {bp:>12,}đ {tp:>12,}đ {rd:>12,}đ {st:16s} {n_txn:5d}')
+
+if __name__ == '__main__':
+    main()

@@ -173,7 +173,7 @@ export default function ProfilePage({ embedded = false }) {
   const roleLabels = {
     ADMIN: 'Quản trị viên',
     STAFF: 'Nhân viên',
-    TEACHER: 'Giảng viên',
+    TEACHER: 'Giáo viên',
     STUDENT: 'Học viên',
     AGENCY: 'Đại lý',
     ACCOUNTANT: 'Kế toán',

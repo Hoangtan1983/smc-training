@@ -23,6 +23,15 @@ const roleBadgeColors = {
   ACCOUNTANT: 'bg-pink-100 text-pink-700',
 };
 
+const roleLabels = {
+  ADMIN: 'Quản trị viên',
+  STAFF: 'Nhân viên',
+  TEACHER: 'Giáo viên',
+  STUDENT: 'Học viên',
+  AGENCY: 'Đại lý',
+  ACCOUNTANT: 'Kế toán',
+};
+
 const statusBadgeMap = {
   ACTIVE: 'badge-success',
   PENDING: 'badge-warning',
@@ -219,7 +228,7 @@ export default function StaffUserManager() {
         >
           <option value="">Tất cả vai trò</option>
           {ROLE_OPTIONS.map(r => (
-            <option key={r} value={r}>{r}</option>
+            <option key={r} value={r}>{roleLabels[r]}</option>
           ))}
         </select>
         <select
@@ -271,7 +280,7 @@ export default function StaffUserManager() {
                       <td className="text-gray-500">{user.phone || '-'}</td>
                       <td>
                         <span className={`badge ${roleBadgeColors[user.role] || 'badge-neutral'}`}>
-                          {user.role}
+                          {roleLabels[user.role] || user.role}
                         </span>
                       </td>
                       <td>
@@ -364,7 +373,7 @@ export default function StaffUserManager() {
             <label className="input-label">Vai trò</label>
             <select name="role" value={form.role} onChange={handleFormChange} className="input-field">
               {ROLE_OPTIONS.map(r => (
-                <option key={r} value={r}>{r}</option>
+                <option key={r} value={r}>{roleLabels[r]}</option>
               ))}
             </select>
           </div>
