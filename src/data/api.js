@@ -1,6 +1,6 @@
 import toast from 'react-hot-toast';
 
-const BASE_URL = '/api';
+const BASE_URL = '/api/auth.php';
 const TOKEN_KEY = 'smc-token';
 
 function getToken() {
@@ -15,395 +15,295 @@ export function setToken(token) {
   }
 }
 
-async function apiCall(endpoint, options = {}) {
-  const token = getToken();
-  const headers = { ...options.headers };
-
-  if (!(options.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
+async function request(method, path, body = null, params = {}) {
+  // Build URL: /api/auth.php?action={path}
+  const cleanPath = path.replace(/^\/+/, '');
+  let url = BASE_URL + '?action=' + encodeURIComponent(cleanPath);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') {
+      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(v);
+    }
   }
 
+  const headers = {};
+  if (!(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Fix: loại bỏ /api prefix nếu có vì BASE_URL đã có /api
-  let cleanEndpoint = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
-  if (!cleanEndpoint.startsWith('/')) cleanEndpoint = '/' + cleanEndpoint;
-  const url = `${BASE_URL}${cleanEndpoint}`;
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    if (response.status === 401) {
-      setToken(null);
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-      throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
-    }
-
-    if (response.status === 403) {
-      toast.error('Bạn không có quyền thực hiện hành động này.');
-      throw new Error('Từ chối truy cập.');
-    }
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || data.error || `Lỗi HTTP ${response.status}`);
-    }
-
-    return data;
-  } catch (error) {
-    if (error.message.includes('Phiên đăng nhập') || error.message.includes('Từ chối')) {
-      throw error;
-    }
-    throw new Error(error.message || 'Lỗi kết nối máy chủ.');
+  const opts = { method, headers, credentials: 'include' };
+  if (body) {
+    opts.body = body instanceof FormData ? body : JSON.stringify(body);
   }
+
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    throw new Error('Không thể kết nối đến máy chủ');
+  }
+
+  if (res.status === 401) {
+    setToken(null);
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+  }
+
+  if (res.status === 403) {
+    toast.error('Bạn không có quyền thực hiện hành động này.');
+    throw new Error('Từ chối truy cập.');
+  }
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Lỗi HTTP ${res.status}`);
+  }
+
+  return data;
 }
 
 // ─── Auth ───────────────────────────────────────────
 export function login(email, password) {
-  return apiCall('/api/auth.php?action=login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
+  return request('POST', 'login', { email, password });
 }
 
 export function register(data) {
-  return apiCall('/api/auth.php?action=register', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'register', data);
 }
 
 export function logout() {
-  return apiCall('/api/auth.php?action=logout', { method: 'POST' });
+  return request('POST', 'logout');
 }
 
 export function getMe() {
-  return apiCall('/api/auth.php?action=me');
+  return request('GET', 'me');
 }
 
 export function changePassword(currentPassword, newPassword) {
-  return apiCall('/api/auth.php?action=change-password', {
-    method: 'POST',
-    body: JSON.stringify({ currentPassword, newPassword }),
-  });
+  return request('POST', 'change-password', { currentPassword, newPassword });
 }
 
 export function forgotPassword(email) {
-  return apiCall('/api/auth.php?action=forgot-password', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
+  return request('POST', 'forgot-password', { email });
 }
 
 // ─── Users ─────────────────────────────────────────
 export function getUsers(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=users${qs ? '&' + qs : ''}`);
+  return request('GET', 'users', null, params);
 }
 
 export function getUser(id) {
-  return apiCall(`/api/auth.php?action=users/${id}`);
+  return request('GET', `users/${id}`);
 }
 
 export function createUser(data) {
-  return apiCall('/api/auth.php?action=users', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'users', data);
 }
 
 export function updateUser(id, data) {
-  return apiCall(`/api/auth.php?action=users/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `users/${id}`, data);
 }
 
 export function deleteUser(id) {
-  return apiCall(`/api/auth.php?action=users/${id}`, {
-    method: 'DELETE',
-  });
+  return request('DELETE', `users/${id}`);
 }
 
 export function approveUser(id) {
-  return apiCall(`/api/approve-student/${id}`, {
-    method: 'POST',
-  });
+  return request('POST', `approve-student/${id}`);
 }
 
 // ─── Courses ───────────────────────────────────────
 export function getCourses() {
-  return apiCall('/api/auth.php?action=courses');
+  return request('GET', 'courses');
 }
 
 export function getCourse(id) {
-  return apiCall(`/api/auth.php?action=courses&id=${id}`);
+  return request('GET', `courses/${id}`);
 }
 
 export function createCourse(data) {
-  return apiCall('/api/auth.php?action=courses', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'courses', data);
 }
 
 export function updateCourse(id, data) {
-  return apiCall(`/api/auth.php?action=courses&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `courses/${id}`, data);
 }
 
 export function deleteCourse(id) {
-  return apiCall(`/api/auth.php?action=courses&id=${id}`, {
-    method: 'DELETE',
-  });
+  return request('DELETE', `courses/${id}`);
 }
 
 // ─── Classes ───────────────────────────────────────
 export function getClasses(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=classes${qs ? '&' + qs : ''}`);
+  return request('GET', 'classes', null, params);
 }
 
 export function createClass(data) {
-  return apiCall('/api/auth.php?action=classes', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'classes', data);
 }
 
 export function updateClass(id, data) {
-  return apiCall(`/api/auth.php?action=classes&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `classes/${id}`, data);
 }
 
 export function deleteClass(id) {
-  return apiCall(`/api/auth.php?action=classes&id=${id}`, {
-    method: 'DELETE',
-  });
+  return request('DELETE', `classes/${id}`);
 }
 
 // ─── Enrollments ───────────────────────────────────
 export function getEnrollments(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=enrollments${qs ? '&' + qs : ''}`);
+  return request('GET', 'enrollments', null, params);
 }
 
 export function createEnrollment(data) {
-  return apiCall('/api/auth.php?action=enrollments', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'enrollments', data);
 }
 
 export function updateEnrollment(id, data) {
-  return apiCall(`/api/auth.php?action=enrollments&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `enrollments/${id}`, data);
 }
 
 // ─── Registrations ─────────────────────────────────
 export function getRegistrations() {
-  return apiCall('/api/auth.php?action=registrations');
+  return request('GET', 'registrations');
 }
 
 export function approveRegistration(id) {
-  return apiCall(`/api/auth.php?action=registrations&id=${id}`, {
-    method: 'POST',
-  });
+  return request('POST', `registrations/${id}`);
 }
 
 // ─── Exams ─────────────────────────────────────────
 export function getExams() {
-  return apiCall('/api/auth.php?action=exams');
+  return request('GET', 'exams');
 }
 
 export function createExam(data) {
-  return apiCall('/api/auth.php?action=exams', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'exams', data);
 }
 
 // ─── Exam Results ──────────────────────────────────
 export function getExamResults(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=exam-results${qs ? '&' + qs : ''}`);
+  return request('GET', 'exam-results', null, params);
 }
 
 export function submitExam(data) {
-  return apiCall('/api/auth.php?action=exam-results', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'exam-results', data);
 }
 
 // ─── Certifications ────────────────────────────────
 export function getCertifications() {
-  return apiCall('/api/auth.php?action=certifications');
+  return request('GET', 'certifications');
 }
 
 // ─── Question Bank ─────────────────────────────────
 export function getQuestionBank() {
-  return apiCall('/api/auth.php?action=question-bank');
+  return request('GET', 'question-bank');
 }
 
 // ─── Tuition ───────────────────────────────────────
 export function getTuitionList() {
-  return apiCall('/api/admin/tuition-list');
+  return request('GET', 'admin/tuition-list');
 }
 
 export function getTuitionStudents() {
-  return apiCall('/api/admin/tuition-students');
+  return request('GET', 'admin/tuition-students');
 }
 
 export function getTuitionReport() {
-  return apiCall('/api/admin/tuition-report');
+  return request('GET', 'admin/tuition-report');
 }
 
 export function getMyTuition() {
-  return apiCall('/api/my-tuition');
+  return request('GET', 'my-tuition');
 }
 
 export function addTuition(data) {
-  return apiCall('/api/admin/tuition-add', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'admin/tuition-add', data);
 }
 
 export function processPayment(data) {
-  return apiCall('/api/admin/process-payment', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'admin/process-payment', data);
 }
 
 export function approveTransaction(data) {
-  return apiCall('/api/admin/approve-transaction', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'admin/approve-transaction', data);
 }
 
 // ─── My Enrollments ────────────────────────────────
 export function getMyEnrollments() {
-  return apiCall('/api/my-enrollments');
+  return request('GET', 'my-enrollments');
 }
 
 // ─── Assign / Stage ────────────────────────────────
 export function assignClass(data) {
-  return apiCall('/api/assign-class', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'assign-class', data);
 }
 
 export function updateStage(data) {
-  return apiCall('/api/update-stage', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'update-stage', data);
 }
 
 // ─── Fly Logs ──────────────────────────────────────
 export function getFlyLogs(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return apiCall(`/api/auth.php?action=fly-logs${qs ? '&' + qs : ''}`);
+  return request('GET', 'fly_logs', null, params);
 }
 
 export function updateFlyLog(id, data) {
-  return apiCall(`/api/auth.php?action=fly-logs&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `fly_logs/${id}`, data);
 }
 
 // ─── Agencies ──────────────────────────────────────
 export function getAgencies() {
-  return apiCall('/api/auth.php?action=agencies');
+  return request('GET', 'agencies');
 }
 
 export function createAgency(data) {
-  return apiCall('/api/auth.php?action=agencies', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return request('POST', 'agencies', data);
 }
 
 export function updateAgency(id, data) {
-  return apiCall(`/api/auth.php?action=agencies&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-
-// ─── Chat / Messages ───────────────────────────────
-export function getChatMessages(userId) {
-  return apiCall(`/api/auth.php?action=messages&user=${userId}`);
-}
-
-export function sendMessage(data) {
-  return apiCall('/api/auth.php?action=messages', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-// ─── Upload / Files ────────────────────────────────
-export function uploadFile(formData) {
-  return apiCall('/api/upload', {
-    method: 'POST',
-    body: formData,
-  });
-}
-
-export function getFiles() {
-  return apiCall('/api/files');
-}
-
-// ─── Health ────────────────────────────────────────
-export function healthCheck() {
-  return apiCall('/api/health');
-}
-
-// ─── Reports ───────────────────────────────────────
-export function getReports(type) {
-  return apiCall(`/api/auth.php?action=reports&type=${type}`);
+  return request('PUT', `agencies/${id}`, data);
 }
 
 // ─── Change Requests ───────────────────────────────
 export function getChangeRequests() {
-  return apiCall('/api/auth.php?action=change-requests');
+  return request('GET', 'change-requests');
 }
 
 export function updateChangeRequest(id, data) {
-  return apiCall(`/api/auth.php?action=change-requests&id=${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', `change-requests/${id}`, data);
+}
+
+// ─── Upload / Files ────────────────────────────────
+export function uploadFile(formData) {
+  return request('POST', 'upload', formData);
+}
+
+export function getFiles() {
+  return request('GET', 'files');
+}
+
+// ─── Health ────────────────────────────────────────
+export function healthCheck() {
+  return request('GET', 'health');
+}
+
+// ─── Reports ───────────────────────────────────────
+export function getReports(type) {
+  return request('GET', 'reports', null, { type });
 }
 
 // ─── Settings ──────────────────────────────────────
 export function getSettings() {
-  return apiCall('/api/auth.php?action=settings');
+  return request('GET', 'settings');
 }
 
 export function updateSettings(data) {
-  return apiCall('/api/auth.php?action=settings', {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return request('PUT', 'settings', data);
 }

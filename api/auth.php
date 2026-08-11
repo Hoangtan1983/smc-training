@@ -1683,6 +1683,10 @@ foreach ($dataRoutes as $route) {
         if ($route === 'classes' && $method === 'GET' && !($parts[$idIdx] ?? null)) {
             $pubGet = true;
         }
+        // STUDENT can GET exams, question_bank (cần để xem đề thi và ôn luyện)
+        if (in_array($route, ['exams']) && $method === 'GET' && !($parts[$idIdx] ?? null)) {
+            $pubGet = true;
+        }
         // ── STUDENT: chỉ trả về dữ liệu của chính mình cho fly_logs, certifications, attendance ──
         if (in_array($route, ['fly_logs', 'certifications', 'attendance']) && $method === 'GET' && !($parts[$idIdx] ?? null)) {
             $auth = authenticate();
