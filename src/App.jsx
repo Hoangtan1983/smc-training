@@ -52,6 +52,7 @@ import TeacherFlyLogs from './pages/teacher/TeacherFlyLogs';
 import TeacherExamGrading from './pages/teacher/TeacherExamGrading';
 import TeacherSchedule from './pages/teacher/TeacherSchedule';
 import TeacherMaterials from './pages/teacher/TeacherMaterials';
+import TeacherFileManager from './pages/teacher/FileManager';
 import StaffDocuments from './pages/staff/StaffDocuments';
 import StaffCourses from './pages/staff/StaffCourses';
 import StaffTuition from './pages/staff/StaffTuition';
@@ -90,6 +91,7 @@ import AccountantCashLedger from './pages/accountant/AccountantCashLedger';
 import AccountantReports from './pages/accountant/AccountantReports';
 import AccountantTuition from './pages/accountant/AccountantTuition';
 import AccountantAgencies from './pages/accountant/AccountantAgencies';
+import AccountantBankReconciliation from './pages/accountant/AccountantBankReconciliation';
 
 // Public pages
 import AboutPage from './pages/AboutPage';
@@ -179,6 +181,7 @@ function AppRoutes() {
         <Route path="nhat-ky-bay" element={<TeacherFlyLogs />} />
         <Route path="sat-hach" element={<TeacherExamGrading />} />
         <Route path="lich-day" element={<TeacherSchedule />} />
+        <Route path="files" element={<TeacherFileManager />} />
       </Route>
 
       {/* Student */}
@@ -197,6 +200,7 @@ function AppRoutes() {
         <Route path="chung-chi" element={<StudentCertificates />} />
         <Route path="ho-so" element={<StudentProfile />} />
         <Route path="thanh-toan" element={<StudentPayment />} />
+        <Route path="hoc-phi" element={<StudentPayment />} />
       </Route>
 
       {/* Agency */}
@@ -213,7 +217,7 @@ function AppRoutes() {
         <Route index element={<AccountantDashboard />} />
         <Route path="duyet-phieu-thu" element={<AccountantApprovals />} />
         <Route path="so-quy-tien-mat" element={<AccountantCashLedger />} />
-        <Route path="doi-chieu-ngan-hang" element={<AccountantReports />} />
+        <Route path="doi-chieu-ngan-hang" element={<AccountantBankReconciliation />} />
         <Route path="hoc-phi" element={<AccountantTuition />} />
         <Route path="dai-ly" element={<AccountantAgencies />} />
         <Route path="bao-cao" element={<AccountantReports />} />

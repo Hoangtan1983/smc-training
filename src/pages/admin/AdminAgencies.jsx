@@ -15,17 +15,14 @@ export default function AdminAgencies() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    name: '', agent_code: '', phone: '', email: '', address: '', commission_rate: 10,
+    name: '', code: '', phone: '', email: '', address: '', discountPercent: 10,
   });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Sử dụng apiGetAgencies vì Vite đang serve phiên bản API cũ
-      // Thử cả 2 tên hàm: getAgencies và apiGetAgencies (tùy phiên bản Vite cache)
-      const fn = api.getAgencies || api.apiGetAgencies;
-      const res = await fn();
+      const res = await api.getAgencies();
       const list = Array.isArray(res) ? res : (res?.data || res?.agencies || []);
       setAgencies(list);
     } catch (err) {
@@ -42,7 +39,7 @@ export default function AdminAgencies() {
 
   const openCreateModal = () => {
     setSelectedAgency(null);
-    setForm({ name: '', agent_code: '', phone: '', email: '', address: '', commission_rate: 10 });
+    setForm({ name: '', code: '', phone: '', email: '', address: '', discountPercent: 10 });
     setModalOpen(true);
   };
 
@@ -50,11 +47,11 @@ export default function AdminAgencies() {
     setSelectedAgency(agency);
     setForm({
       name: agency.name || agency.agency_name || '',
-      agent_code: agency.agent_code || agency.code || '',
+      code: agency.code || '',
       phone: agency.phone || '',
       email: agency.email || '',
       address: agency.address || '',
-      commission_rate: agency.commission_rate || agency.commissionRate || 10,
+      discountPercent: agency.discountPercent || 10,
     });
     setModalOpen(true);
   };
@@ -66,17 +63,18 @@ export default function AdminAgencies() {
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: name === 'commission_rate' ? Number(value) : value }));
+    setForm(prev => ({ ...prev, [name]: name === 'discountPercent' ? Number(value) : value }));
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.agent_code) {
+    if (!form.name || !form.code) {
       toast.error('Vui lòng nhập tên và mã đại lý.');
       return;
     }
     setSaving(true);
     try {
       if (selectedAgency) {
+        await api.updateAgency(selectedAgency.id, form);
         toast.success('Cập nhật đại lý thành công.');
       } else {
         await api.createAgency(form);
@@ -97,7 +95,7 @@ export default function AdminAgencies() {
   };
 
   const getStudentCount = (agency) => {
-    return agency.student_count || agency.students?.length || agency.enrollment_count || 0;
+    return agency.studentCount || agency.student_count || agency.students?.length || agency.enrollment_count || 0;
   };
 
   if (loading) {
@@ -147,7 +145,7 @@ export default function AdminAgencies() {
                   <span className="text-lg font-bold text-orange-600">{getInitials(agency)}</span>
                 </div>
                 <span className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-ios">
-                  {agency.agent_code || agency.code || '-'}
+                  {agency.code || '-'}
                 </span>
               </div>
 
@@ -179,7 +177,7 @@ export default function AdminAgencies() {
                 <div className="flex items-center gap-1 text-sm">
                   <TrendingUp className="w-4 h-4 text-green-500" />
                   <span className="font-semibold text-green-600">
-                    {agency.commission_rate || agency.commissionRate || 10}%
+                    {agency.discountPercent || 10}%
                   </span>
                 </div>
               </div>
@@ -215,8 +213,8 @@ export default function AdminAgencies() {
           <div>
             <label className="input-label">Mã đại lý</label>
             <input
-              name="agent_code"
-              value={form.agent_code}
+              name="code"
+              value={form.code}
               onChange={handleFormChange}
               className="input-field"
               placeholder="VD: AG001"
@@ -258,9 +256,9 @@ export default function AdminAgencies() {
           <div>
             <label className="input-label">Tỉ lệ hoa hồng (%)</label>
             <input
-              name="commission_rate"
+              name="discountPercent"
               type="number"
-              value={form.commission_rate}
+              value={form.discountPercent}
               onChange={handleFormChange}
               className="input-field"
               placeholder="10"
@@ -285,7 +283,7 @@ export default function AdminAgencies() {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-gray-900">{selectedAgency.name || selectedAgency.agency_name}</h3>
-                <p className="text-sm text-gray-400 font-mono">{selectedAgency.agent_code || selectedAgency.code}</p>
+                <p className="text-sm text-gray-400 font-mono">{selectedAgency.code}</p>
               </div>
             </div>
 
@@ -293,9 +291,9 @@ export default function AdminAgencies() {
               <div><span className="text-gray-400">Email:</span> <span className="font-medium">{selectedAgency.email || '-'}</span></div>
               <div><span className="text-gray-400">Số điện thoại:</span> <span className="font-medium">{selectedAgency.phone || '-'}</span></div>
               <div><span className="text-gray-400">Địa chỉ:</span> <span className="font-medium">{selectedAgency.address || '-'}</span></div>
-              <div><span className="text-gray-400">Hoa hồng:</span> <span className="font-medium text-green-600">{selectedAgency.commission_rate || selectedAgency.commissionRate || 10}%</span></div>
+              <div><span className="text-gray-400">Hoa hồng:</span> <span className="font-medium text-green-600">{selectedAgency.discountPercent || 10}%</span></div>
               <div><span className="text-gray-400">Tổng học viên:</span> <span className="font-medium">{getStudentCount(selectedAgency)}</span></div>
-              <div><span className="text-gray-400">Ngày tạo:</span> <span className="font-medium">{selectedAgency.created_at || selectedAgency.createdAt || '-'}</span></div>
+              <div><span className="text-gray-400">Ngày tạo:</span> <span className="font-medium">{selectedAgency.createdAt || '-'}</span></div>
             </div>
 
             {/* Student list of this agency */}

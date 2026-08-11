@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, School, GraduationCap, FileText,
   Presentation, BookOpen, ClipboardList, BookMarked,
-  ClipboardCheck, Plane, PenTool, Calendar,
+  ClipboardCheck, Plane, PenTool, Calendar, FolderOpen,
   Menu, X, LogOut, Settings,
 } from 'lucide-react';
 
@@ -24,6 +24,7 @@ const sidebarItems = [
   { to: '/teacher/kiem-tra', icon: ClipboardCheck, label: 'Kiểm tra' },
   { to: '/teacher/sat-hach', icon: PenTool, label: 'Sát hạch' },
   { to: '/teacher/nhat-ky-bay', icon: Plane, label: 'Nhật ký bay' },
+  { to: '/teacher/files', icon: FolderOpen, label: 'Quản lý file' },
 ];
 
 export default function TeacherLayout() {

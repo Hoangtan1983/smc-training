@@ -343,6 +343,13 @@ export function createAgency(data) {
   });
 }
 
+export function updateAgency(id, data) {
+  return apiCall(`/api/auth.php?action=agencies&id=${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
 // ─── Chat / Messages ───────────────────────────────
 export function getChatMessages(userId) {
   return apiCall(`/api/auth.php?action=messages&user=${userId}`);

@@ -23,6 +23,7 @@ const sidebarItems = [
   { to: '/student/nhat-ky-bay', icon: Plane, label: 'Nhật ký bay' },
   { to: '/student/chung-chi', icon: Award, label: 'Chứng chỉ' },
   { to: '/student/thanh-toan', icon: CreditCard, label: 'Thanh toán' },
+  { to: '/student/hoc-phi', icon: CreditCard, label: 'Học phí' },
 ];
 
 export default function StudentLayout() {
