@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" fill="none">
+  <defs>
+    <linearGradient id="smc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0072CE;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00A19D;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="smc-icon-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0072CE;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00A19D;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Drone/Tech icon -->
+  <g transform="translate(8, 8)">
+    <circle cx="22" cy="22" r="20" fill="url(#smc-icon-grad)" opacity="0.15"/>
+    <circle cx="22" cy="22" r="16" fill="url(#smc-icon-grad)" opacity="0.1"/>
+    <!-- Shield/tech shape -->
+    <path d="M22 4L8 14V22C8 32 14 38 22 40C30 38 36 32 36 22V14L22 4Z" fill="url(#smc-icon-grad)" opacity="0.9"/>
+    <path d="M22 12L14 18V22C14 28 18 32 22 33C26 32 30 28 30 22V18L22 12Z" fill="white" opacity="0.9"/>
+    <!-- S letter mark -->
+    <text x="14" y="33" font-family="Inter,sans-serif" font-weight="900" font-size="14" fill="url(#smc-icon-grad)" letter-spacing="0">S</text>
+  </g>
+  <!-- SMC text -->
+  <text x="56" y="30" font-family="Inter,sans-serif" font-weight="900" font-size="20" fill="#0072CE" letter-spacing="1">SMC</text>
+  <!-- SmartConnect -->
+  <text x="110" y="30" font-family="Inter,sans-serif" font-weight="600" font-size="14" fill="#0f172a" letter-spacing="0">SMARTCONNECT</text>
+  <!-- Drone Academy subtitle -->
+  <text x="56" y="46" font-family="Inter,sans-serif" font-weight="500" font-size="10" fill="#64748b" letter-spacing="3">DRONE ACADEMY</text>
+</svg>

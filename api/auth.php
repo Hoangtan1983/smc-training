@@ -21,15 +21,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// ── Shared libraries (single source of truth) ──
-// helpers.php cung cấp: loadData, saveData, sanitizeUser, findUserByEmail, findUserById, genId,
-//   getTokenFromRequest, jsonInput, jsonResponse, createToken, verifyToken, authenticate,
-//   requireRole, rateLimit, getClientIP, setTokenCookie, clearTokenCookie
-// auth-lib.php cung cấp: alGetToken, alCreateToken, alVerifyToken, alRequireRole, alRateLimit, ...
-require_once __DIR__ . '/helpers.php';
-require_once __DIR__ . '/auth-lib.php';
+// ── Helpers (duy nhất) ──
+// Auth functions được cung cấp bởi auth-lib.php (các hàm al*) và helpers.php (findUserByEmail, findUserById, sanitizeUser...)
+// Chỉ giữ genId() vì không có trong các file shared, và loadData/saveData với cơ chế cache in-memory.
 
-// ── Legacy wrapper: gọi trực tiếp processPaymentInternal ──
+function genId($prefix = 'u-') {
+    return $prefix . bin2hex(random_bytes(8));
+}
+
+// ── Data Store (file-based with caching) ──
+$dataDir = __DIR__ . '/data';
+if (!is_dir($dataDir)) {
+    mkdir($dataDir, 0750, true);
+}
+
+// In-memory cache để tránh đọc file liên tục
+$dataCache = [];
+$cacheTime = [];
+
+function loadData($file, $ttl = 5) {
+    global $dataDir, $dataCache, $cacheTime;
+    $now = microtime(true);
+
+    // Trả về cache nếu còn tươi (TTL = 5 giây)
+    if (isset($dataCache[$file]) && ($now - ($cacheTime[$file] ?? 0)) < $ttl) {
+        return $dataCache[$file];
+    }
+
+    $path = $dataDir . '/' . $file . '.json';
+    if (!file_exists($path)) {
+        $dataCache[$file] = [];
+        $cacheTime[$file] = $now;
+        return [];
+    }
+    $data = json_decode(file_get_contents($path), true) ?: [];
+    $dataCache[$file] = $data;
+    $cacheTime[$file] = $now;
+    return $data;
+}
+
+function saveData($file, $data) {
+    global $dataDir, $dataCache, $cacheTime;
+    $path = $dataDir . '/' . $file . '.json';
+    $now = microtime(true);
+    // Atomic write: ghi ra file tạm rồi rename
+    $tmp = $path . '.tmp.' . getmypid();
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    if ($json === false) {
+        error_log("[SMC] JSON encode failed for {$file}: " . json_last_error_msg());
+        return false;
+    }
+    $written = file_put_contents($tmp, $json, LOCK_EX);
+    if ($written === false) {
+        error_log("[SMC] file_put_contents failed for {$tmp}. Dir writable? " . (is_writable($dataDir) ? 'yes' : 'no') . ". Disk space: " . disk_free_space($dataDir));
+        return false;
+    }
+    if (!rename($tmp, $path)) {
+        error_log("[SMC] rename failed: {$tmp} → {$path}");
+        @unlink($tmp);
+        return false;
+    }
+    // Cập nhật cache CHỈ KHI ghi file thành công
+    $dataCache[$file] = $data;
+    $cacheTime[$file] = $now;
+    return true;
+}
+
+// ── Unified Payment Processing ──
+// Tập trung logic xử lý thanh toán + kích hoạt + enrollment + email
+/**
+ * DEPRECATED — processPaymentInternal
+ *
+ * ⚠️  Hàm này KHÔNG còn được sử dụng cho các thao tác học phí mới.
+ * Tất cả thao tác học phí phải qua tuition-service.php:
+ *   - record-payment   (Staff ghi nhận thu tiền)
+ *   - confirm-receipt   (Accountant/Admin duyệt phiếu thu)
+ *
+ * Hàm này CHỈ giữ lại để tương thích ngược với các endpoint wrapper cũ
+ * (approve-student, partial-approve, confirm-payment).
+ * Các wrapper này sẽ sớm được thay thế hoàn toàn.
+ *
+ * ⚠️  QUAN TRỌNG: Hàm này ghi invoices + transactions + users + enrollments
+ * SONG SONG với tuition-service.php. Nếu cả 2 cùng chạy sẽ gây ĐÈ DỮ LIỆU.
+ * Luôn ưu tiên tuition-service.php cho thao tác mới.
+ */
 function processPaymentInternal($input, $auth) {
     // ── FALLBACK: Gọi tuition-service.php nếu có thể ──
     // Trong tương lai, tất cả wrapper sẽ gọi trực tiếp tuition-service.php
@@ -323,7 +398,12 @@ function processPaymentInternal($input, $auth) {
 
     // Sync agency commission
     if ($agencyId && $discountPercent > 0) {
-        $commissions = loadData('agency_commissions');
+        $dataDir = __DIR__ . '/data';
+        $commissions = [];
+        $commPath = $dataDir . '/agency_commissions.json';
+        if (file_exists($commPath)) {
+            $commissions = json_decode(file_get_contents($commPath), true) ?: [];
+        }
         $foundComm = false;
         foreach ($commissions as &$comm) {
             if (($comm['invoiceId'] ?? '') === $invoiceId) {
@@ -352,7 +432,9 @@ function processPaymentInternal($input, $auth) {
                 'updatedAt' => $now,
             ];
         }
-        saveData('agency_commissions', $commissions);
+        $commTmp = $commPath . '.tmp.' . getmypid();
+        file_put_contents($commTmp, json_encode($commissions, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+        rename($commTmp, $commPath);
     }
 
     // Send email (non-critical)
@@ -622,8 +704,65 @@ function initSeed() {
 initSeed();
 
 // ── Shared Auth Library (v4) ──
-// Đã require auth-lib.php ở đầu file.
-// Các alias function (getTokenFromRequest, createToken, ...) đã được định nghĩa ở trên.
+// Tất cả auth functions được tập trung trong auth-lib.php
+// auth.php giữ backward compatibility qua alias functions
+require_once __DIR__ . '/auth-lib.php';
+
+// Aliases cho backward compatibility với code hiện tại trong auth.php
+// (các hàm này được gọi trực tiếp từ routes bên dưới)
+function getTokenFromRequest() { return alGetToken(); }
+function setTokenCookie($token) { alSetTokenCookie($token); }  // Note: overridden below với SameSite=Lax
+function clearTokenCookie() { alClearTokenCookie(); }
+function createToken($user) { return alCreateToken($user); }
+function verifyToken($token) { return alVerifyToken($token); }
+function authenticate() { return alAuthenticate(); }
+function jsonResponse($data, $code = 200) { alJsonResponse($data, $code); }
+function jsonInput() { return alJsonInput(); }
+function getClientIP() { return alGetClientIP(); }
+function rateLimit($key, $maxRequests, $windowSeconds, $errorMessage) {
+    return alRateLimit($key, $maxRequests, $windowSeconds, $errorMessage);
+}
+
+function requireRole($allowedRoles) {
+    $auth = alAuthenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+    if (!in_array($auth['role'], $allowedRoles)) jsonResponse(['error' => 'Forbidden'], 403);
+    return $auth;
+}
+
+// ── User helpers (dùng chung với loadData/saveData từ auth.php) ──
+// Các hàm này dùng loadData('users') và saveData('users') định nghĩa ở auth.php
+function sanitizeUser($u) {
+    return [
+        'id' => $u['id'],
+        'email' => $u['email'],
+        'role' => $u['role'],
+        'fullName' => $u['fullName'],
+        'phone' => $u['phone'] ?? '',
+        'status' => $u['status'] ?? 'PENDING',
+        'courseId' => $u['courseId'] ?? '',
+        'rank' => $u['rank'] ?? '',
+        'agencyId' => $u['agencyId'] ?? '',
+        'address' => $u['address'] ?? '',
+        'notes' => $u['notes'] ?? '',
+        'createdAt' => $u['createdAt'] ?? '',
+    ];
+}
+
+function findUserByEmail($email) {
+    $users = loadData('users');
+    foreach ($users as $u) {
+        if (($u['status'] ?? '') === 'REJECTED') continue;
+        if (strtolower($u['email']) === strtolower($email) || ($u['phone'] ?? '') === $email) return $u;
+    }
+    return null;
+}
+
+function findUserById($id) {
+    $users = loadData('users');
+    foreach ($users as $u) { if ($u['id'] === $id) return $u; }
+    return null;
+}
 
 // ── Router ──
 $method = $_SERVER['REQUEST_METHOD'];
@@ -931,9 +1070,7 @@ if (($parts[0] ?? '') === 'users' || (($parts[0] ?? '') === 'auth' && ($parts[1]
         if (!$u) jsonResponse(['error' => 'Không tìm thấy người dùng'], 404);
         jsonResponse(sanitizeUser($u));
     }
-    if ($method === 'POST') {
-        // POST với userId → không hợp lệ (không thể POST vào user cụ thể)
-        if ($userId) jsonResponse(['error' => 'Không thể tạo user với ID cụ thể. Dùng POST /api/users'], 400);
+    if ($method === 'POST' && !$userId) {
         $auth = requireRole(['ADMIN', 'STAFF']);
         $input = jsonInput();
         if (!$input['email'] || !$input['password'] || !$input['fullName']) jsonResponse(['error' => 'Thiếu thông tin'], 400);
@@ -1551,6 +1688,7 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
             'courses' => ['name', 'price', 'description', 'duration', 'minFlyHours', 'category', 'status', 'syllabus'],
             'classes' => ['name', 'courseId', 'teacherId', 'student_ids', 'schedule', 'room', 'status', 'startDate', 'endDate'],
             'agencies' => ['name', 'code', 'contactPerson', 'phone', 'email', 'address', 'discountPercent', 'status', 'note'],
+            'agents' => ['name', 'code', 'contact_person', 'phone', 'email', 'password', 'commission_rate', 'status', 'address', 'tax_code', 'subjectType', 'allowedCourses', 'notes', 'userId'],
             'enrollments' => ['student_id', 'course_id', 'course_name', 'status', 'payment_status', 'stage', 'teacher_id', 'notes'],
         ];
         $whitelist = $allowedFields[$collection] ?? null;
@@ -1667,7 +1805,7 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
 }
 
 // ── Data endpoints ──
-$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions', 'agencies', 'agency_commissions'];
+$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions', 'agents', 'agencies'];
 
 foreach ($dataRoutes as $route) {
     $matches = ($parts[0] ?? '') === $route || (($parts[0] ?? '') === 'auth' && ($parts[1] ?? '') === $route);
@@ -1683,20 +1821,9 @@ foreach ($dataRoutes as $route) {
         if ($route === 'classes' && $method === 'GET' && !($parts[$idIdx] ?? null)) {
             $pubGet = true;
         }
-        // STUDENT can GET exams, question_bank (cần để xem đề thi và ôn luyện)
-        if (in_array($route, ['exams']) && $method === 'GET' && !($parts[$idIdx] ?? null)) {
-            $pubGet = true;
-        }
-        // ── STUDENT: chỉ trả về dữ liệu của chính mình cho fly_logs, certifications, attendance ──
-        if (in_array($route, ['fly_logs', 'certifications', 'attendance']) && $method === 'GET' && !($parts[$idIdx] ?? null)) {
-            $auth = authenticate();
-            if ($auth && $auth['role'] === 'STUDENT') {
-                $items = loadData($route);
-                $filtered = array_values(array_filter($items, fn($item) =>
-                    ($item['student_id'] ?? $item['studentId'] ?? '') === $auth['id']
-                ));
-                jsonResponse($filtered);
-            }
+        // AGENCY/ADMIN can access agents/agencies data
+        if (in_array($route, ['agents', 'agencies'])) {
+            $roles[] = 'AGENCY';
         }
         handleCRUD($route, $roles, $pubGet);
     }
@@ -3148,200 +3275,6 @@ if (($parts[0] ?? '') === 'admin' && ($parts[1] ?? '') === 'toggle-maintenance')
             ? 'Đã BẬT chế độ bảo trì. Học viên và đại lý sẽ không thể đăng nhập.'
             : 'Đã TẮT chế độ bảo trì. Tất cả người dùng có thể đăng nhập bình thường.',
     ]);
-}
-
-// ── Reports (for Agency, Accountant, Staff dashboards) ──
-// GET /api/auth.php?action=reports&type=agency|revenue|debts|payments
-if (($parts[0] ?? '') === 'reports') {
-    $auth = requireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'AGENCY']);
-    $type = $_GET['type'] ?? 'summary';
-
-    $users = loadData('users');
-    $courses = loadData('courses');
-    $tuitions = loadData('tuitions');
-    $agencies = loadData('agencies');
-    $enrollments = loadData('enrollments');
-
-    // ── Summary: tổng quan cho tất cả ──
-    $totalStudents = 0;
-    $activeStudents = 0;
-    $totalRevenue = 0;
-    foreach ($users as $u) {
-        if (($u['role'] ?? '') === 'STUDENT') {
-            $totalStudents++;
-            if (($u['status'] ?? '') === 'ACTIVE') $activeStudents++;
-        }
-    }
-    foreach ($tuitions as $t) {
-        $totalRevenue += (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
-        if (($t['status'] ?? '') === 'paid') {
-            $totalRevenue += (int)($t['amount'] ?? 0);
-        }
-    }
-
-    $reportData = [
-        'total_students' => $totalStudents,
-        'active_students' => $activeStudents,
-        'total_revenue' => $totalRevenue,
-        'total_revenue_fmt' => number_format($totalRevenue) . ' ₫',
-        'total_courses' => count($courses),
-        'total_classes' => count(loadData('classes')),
-        'total_agencies' => count($agencies),
-    ];
-
-    // ── Agency report ──
-    if ($type === 'agency') {
-        $agencyId = $auth['role'] === 'AGENCY' ? $auth['id'] : ($_GET['agency_id'] ?? '');
-        $agencyStudents = [];
-        if ($agencyId) {
-            foreach ($users as $u) {
-                if (($u['agencyId'] ?? '') === $agencyId) {
-                    $agencyStudents[] = $u['id'];
-                }
-            }
-        }
-        $reportData['agency'] = [
-            'id' => $agencyId,
-            'student_count' => count($agencyStudents),
-            'students' => $agencyStudents,
-        ];
-        $reportData['agencies'] = $agencies;
-    }
-
-    // ── Revenue report ──
-    if ($type === 'revenue') {
-        $monthly = [];
-        foreach ($tuitions as $t) {
-            $month = substr($t['createdAt'] ?? '', 0, 7);
-            if ($month) {
-                if (!isset($monthly[$month])) $monthly[$month] = 0;
-                $monthly[$month] += (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
-            }
-        }
-        $reportData['monthly_revenue'] = $monthly;
-    }
-
-    // ── Debts report ──
-    if ($type === 'debts') {
-        $debts = [];
-        foreach ($tuitions as $t) {
-            $paid = (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
-            $total = (int)($t['amount'] ?? 0);
-            if ($paid < $total) {
-                $debts[] = [
-                    'student_id' => $t['studentId'] ?? '',
-                    'student_name' => $t['studentName'] ?? '',
-                    'total' => $total,
-                    'paid' => $paid,
-                    'due' => $total - $paid,
-                ];
-            }
-        }
-        $reportData['debts'] = $debts;
-    }
-
-    // ── Payments report ──
-    if ($type === 'payments') {
-        $reportData['payments'] = loadData('payment_receipts');
-    }
-
-    jsonResponse(['success' => true, 'type' => $type, 'data' => $reportData]);
-}
-
-// ── Settings (for Admin) ──
-// GET /api/auth.php?action=settings
-// PUT /api/auth.php?action=settings
-if (($parts[0] ?? '') === 'settings') {
-    if ($method === 'GET') {
-        requireRole(['ADMIN', 'STAFF']);
-        $settings = loadData('maintenance');
-        jsonResponse([
-            'success' => true,
-            'data' => [
-                'maintenance' => $settings ?: ['enabled' => false],
-                'site_name' => 'SMC Training',
-                'site_url' => 'https://smc-training.com',
-            ],
-        ]);
-    }
-    if ($method === 'PUT') {
-        requireRole(['ADMIN']);
-        $input = jsonInput();
-        if (isset($input['maintenance'])) {
-            setMaintenanceMode(
-                !empty($input['maintenance']['enabled']),
-                $auth['id'],
-                $input['maintenance']['note'] ?? ''
-            );
-        }
-        jsonResponse(['success' => true, 'message' => 'Đã cập nhật cài đặt']);
-    }
-}
-
-// ── Messages (Chat) ──
-// GET /api/auth.php?action=messages&user=X
-// POST /api/auth.php?action=messages
-if (($parts[0] ?? '') === 'messages') {
-    $auth = authenticate();
-    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
-
-    if ($method === 'GET') {
-        $otherUser = $_GET['user'] ?? '';
-        $allMessages = loadData('messages');
-        $conversation = array_values(array_filter($allMessages, function($m) use ($auth, $otherUser) {
-            return ($m['from'] === $auth['id'] && $m['to'] === $otherUser) ||
-                   ($m['from'] === $otherUser && $m['to'] === $auth['id']);
-        }));
-        usort($conversation, fn($a, $b) => strtotime($a['sentAt'] ?? '') - strtotime($b['sentAt'] ?? ''));
-        jsonResponse($conversation);
-    }
-
-    if ($method === 'POST') {
-        $input = jsonInput();
-        $to = $input['to'] ?? '';
-        $text = $input['text'] ?? $input['message'] ?? '';
-        if (!$to || !$text) jsonResponse(['error' => 'Thiếu người nhận hoặc nội dung'], 400);
-
-        $msg = [
-            'id' => 'msg-' . bin2hex(random_bytes(8)),
-            'from' => $auth['id'],
-            'to' => $to,
-            'text' => $text,
-            'sentAt' => date('c'),
-            'read' => false,
-        ];
-
-        $messages = loadData('messages');
-        $messages[] = $msg;
-        saveData('messages', $messages);
-
-        jsonResponse(['success' => true, 'message' => $msg], 201);
-    }
-}
-
-// ── Registration approval ──
-// POST /api/auth.php?action=registrations/reg-xxx (approve)
-if (($parts[0] ?? '') === 'registrations' && ($parts[1] ?? null) && $method === 'POST') {
-    $auth = requireRole(['ADMIN', 'STAFF']);
-    $regId = $parts[1];
-
-    $registrations = loadData('registrations');
-    $found = false;
-    foreach ($registrations as &$reg) {
-        if (($reg['id'] ?? '') === $regId) {
-            $reg['status'] = 'approved';
-            $reg['approvedBy'] = $auth['id'];
-            $reg['approvedAt'] = date('c');
-            $found = true;
-            break;
-        }
-    }
-    unset($reg);
-
-    if (!$found) jsonResponse(['error' => 'Không tìm thấy đơn đăng ký'], 404);
-
-    saveData('registrations', $registrations);
-    jsonResponse(['success' => true, 'message' => 'Đã duyệt đơn đăng ký']);
 }
 
 // 404

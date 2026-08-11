@@ -1,43 +1,55 @@
-.vercel
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build output (giữ lại trong hosting, không cần trong repo)
 dist/
-api/.env.php
-api/env.php
-api/data/*.json
-api/data/ratelimit/
+assets/*.js
+assets/*.css
+!assets/app.css
+!assets/app.js
+!assets/index.css
+!assets/index.js
+!assets/style.css
+
+# Data (dữ liệu thật — không commit)
+api/data/
 api/backups/
-api/uploads/
-*.log
-.DS_Store
-deploy-to-server/
+
+# Lỗi dev cũ (các file .legacy)
+*.legacy
+
+# Environment
+api/env.php
 .env
-.env.local
+.env.*
+!.env.example
 
-# Bảo mật: file chứa thông tin nhạy cảm
-deploy-now.sh
-*.sh
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# ZIP/tmp files
+*.zip
+*.tmp
 *.bak
-*.mjs
 
-# Thư mục tạm/dư thừa
-public/
-assets/
-backups/
-api_backup_*/
+# Database
+*.sqlite
 
-# Debug tạm thời
-api/data/*.log
-api/data/fix-log.txt
-api/data/*.tmp.*
-api/data/auto_backups/
-api/data/smc_training.sqlite
-api/data/*.sqlite
+# File đính kèm lớn
+tai-lieu/
 
-# File debug tạm thời
-api/debug-*.php
-api/cleanup-*.php
-api/d.php
-api/deploy.php
-
-# Legacy files
-api/*.legacy
+# Sensitive
+*.json.bak
