@@ -3146,5 +3146,199 @@ if (($parts[0] ?? '') === 'admin' && ($parts[1] ?? '') === 'toggle-maintenance')
     ]);
 }
 
+// ── Reports (for Agency, Accountant, Staff dashboards) ──
+// GET /api/auth.php?action=reports&type=agency|revenue|debts|payments
+if (($parts[0] ?? '') === 'reports') {
+    $auth = requireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'AGENCY']);
+    $type = $_GET['type'] ?? 'summary';
+
+    $users = loadData('users');
+    $courses = loadData('courses');
+    $tuitions = loadData('tuitions');
+    $agencies = loadData('agencies');
+    $enrollments = loadData('enrollments');
+
+    // ── Summary: tổng quan cho tất cả ──
+    $totalStudents = 0;
+    $activeStudents = 0;
+    $totalRevenue = 0;
+    foreach ($users as $u) {
+        if (($u['role'] ?? '') === 'STUDENT') {
+            $totalStudents++;
+            if (($u['status'] ?? '') === 'ACTIVE') $activeStudents++;
+        }
+    }
+    foreach ($tuitions as $t) {
+        $totalRevenue += (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+        if (($t['status'] ?? '') === 'paid') {
+            $totalRevenue += (int)($t['amount'] ?? 0);
+        }
+    }
+
+    $reportData = [
+        'total_students' => $totalStudents,
+        'active_students' => $activeStudents,
+        'total_revenue' => $totalRevenue,
+        'total_revenue_fmt' => number_format($totalRevenue) . ' ₫',
+        'total_courses' => count($courses),
+        'total_classes' => count(loadData('classes')),
+        'total_agencies' => count($agencies),
+    ];
+
+    // ── Agency report ──
+    if ($type === 'agency') {
+        $agencyId = $auth['role'] === 'AGENCY' ? $auth['id'] : ($_GET['agency_id'] ?? '');
+        $agencyStudents = [];
+        if ($agencyId) {
+            foreach ($users as $u) {
+                if (($u['agencyId'] ?? '') === $agencyId) {
+                    $agencyStudents[] = $u['id'];
+                }
+            }
+        }
+        $reportData['agency'] = [
+            'id' => $agencyId,
+            'student_count' => count($agencyStudents),
+            'students' => $agencyStudents,
+        ];
+        $reportData['agencies'] = $agencies;
+    }
+
+    // ── Revenue report ──
+    if ($type === 'revenue') {
+        $monthly = [];
+        foreach ($tuitions as $t) {
+            $month = substr($t['createdAt'] ?? '', 0, 7);
+            if ($month) {
+                if (!isset($monthly[$month])) $monthly[$month] = 0;
+                $monthly[$month] += (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+            }
+        }
+        $reportData['monthly_revenue'] = $monthly;
+    }
+
+    // ── Debts report ──
+    if ($type === 'debts') {
+        $debts = [];
+        foreach ($tuitions as $t) {
+            $paid = (int)($t['partialAmount'] ?? $t['paymentAmount'] ?? 0);
+            $total = (int)($t['amount'] ?? 0);
+            if ($paid < $total) {
+                $debts[] = [
+                    'student_id' => $t['studentId'] ?? '',
+                    'student_name' => $t['studentName'] ?? '',
+                    'total' => $total,
+                    'paid' => $paid,
+                    'due' => $total - $paid,
+                ];
+            }
+        }
+        $reportData['debts'] = $debts;
+    }
+
+    // ── Payments report ──
+    if ($type === 'payments') {
+        $reportData['payments'] = loadData('payment_receipts');
+    }
+
+    jsonResponse(['success' => true, 'type' => $type, 'data' => $reportData]);
+}
+
+// ── Settings (for Admin) ──
+// GET /api/auth.php?action=settings
+// PUT /api/auth.php?action=settings
+if (($parts[0] ?? '') === 'settings') {
+    if ($method === 'GET') {
+        requireRole(['ADMIN', 'STAFF']);
+        $settings = loadData('maintenance');
+        jsonResponse([
+            'success' => true,
+            'data' => [
+                'maintenance' => $settings ?: ['enabled' => false],
+                'site_name' => 'SMC Training',
+                'site_url' => 'https://smc-training.com',
+            ],
+        ]);
+    }
+    if ($method === 'PUT') {
+        requireRole(['ADMIN']);
+        $input = jsonInput();
+        if (isset($input['maintenance'])) {
+            setMaintenanceMode(
+                !empty($input['maintenance']['enabled']),
+                $auth['id'],
+                $input['maintenance']['note'] ?? ''
+            );
+        }
+        jsonResponse(['success' => true, 'message' => 'Đã cập nhật cài đặt']);
+    }
+}
+
+// ── Messages (Chat) ──
+// GET /api/auth.php?action=messages&user=X
+// POST /api/auth.php?action=messages
+if (($parts[0] ?? '') === 'messages') {
+    $auth = authenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+
+    if ($method === 'GET') {
+        $otherUser = $_GET['user'] ?? '';
+        $allMessages = loadData('messages');
+        $conversation = array_values(array_filter($allMessages, function($m) use ($auth, $otherUser) {
+            return ($m['from'] === $auth['id'] && $m['to'] === $otherUser) ||
+                   ($m['from'] === $otherUser && $m['to'] === $auth['id']);
+        }));
+        usort($conversation, fn($a, $b) => strtotime($a['sentAt'] ?? '') - strtotime($b['sentAt'] ?? ''));
+        jsonResponse($conversation);
+    }
+
+    if ($method === 'POST') {
+        $input = jsonInput();
+        $to = $input['to'] ?? '';
+        $text = $input['text'] ?? $input['message'] ?? '';
+        if (!$to || !$text) jsonResponse(['error' => 'Thiếu người nhận hoặc nội dung'], 400);
+
+        $msg = [
+            'id' => 'msg-' . bin2hex(random_bytes(8)),
+            'from' => $auth['id'],
+            'to' => $to,
+            'text' => $text,
+            'sentAt' => date('c'),
+            'read' => false,
+        ];
+
+        $messages = loadData('messages');
+        $messages[] = $msg;
+        saveData('messages', $messages);
+
+        jsonResponse(['success' => true, 'message' => $msg], 201);
+    }
+}
+
+// ── Registration approval ──
+// POST /api/auth.php?action=registrations/reg-xxx (approve)
+if (($parts[0] ?? '') === 'registrations' && ($parts[1] ?? null) && $method === 'POST') {
+    $auth = requireRole(['ADMIN', 'STAFF']);
+    $regId = $parts[1];
+
+    $registrations = loadData('registrations');
+    $found = false;
+    foreach ($registrations as &$reg) {
+        if (($reg['id'] ?? '') === $regId) {
+            $reg['status'] = 'approved';
+            $reg['approvedBy'] = $auth['id'];
+            $reg['approvedAt'] = date('c');
+            $found = true;
+            break;
+        }
+    }
+    unset($reg);
+
+    if (!$found) jsonResponse(['error' => 'Không tìm thấy đơn đăng ký'], 404);
+
+    saveData('registrations', $registrations);
+    jsonResponse(['success' => true, 'message' => 'Đã duyệt đơn đăng ký']);
+}
+
 // 404
 jsonResponse(['error' => 'Not found: ' . $method . ' ' . $path], 404);
