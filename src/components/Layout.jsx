@@ -1,185 +1,225 @@
-import { useState, useEffect, useRef } from 'react';
-import { Outlet, Link, NavLink, useLocation } from 'react-router-dom';
-import { Menu, X, ChevronDown } from 'lucide-react';
-
-const navLinks = [
-  { to: '/', label: 'Trang chủ' },
-  { to: '/gioi-thieu', label: 'Giới thiệu' },
-  { to: '/hinh-anh', label: 'Hình ảnh' },
-  { to: '/lich-thi', label: 'Lịch thi' },
-  { to: '/tra-cuu', label: 'Tra cứu' },
-];
+import { useState, useEffect } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Menu, X, ChevronDown, LogOut, User, LayoutDashboard } from 'lucide-react';
 
 export default function Layout() {
+  const { user, logout, ROLE_LABELS } = useAuth();
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-  const isHome = location.pathname === '/';
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    const handler = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handler);
+    return () => window.removeEventListener('scroll', handler);
   }, []);
 
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
-  const navClasses = isHome && !scrolled
-    ? 'bg-transparent text-white'
-    : 'bg-white/80 backdrop-blur-xl border-b border-gray-100 text-gray-700 shadow-sm';
-
-  const linkClasses = isHome && !scrolled
-    ? 'text-white/90 hover:text-white'
-    : 'text-gray-600 hover:text-gray-900';
+  const isHome = location.pathname === '/';
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Nav */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${navClasses}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+    <div className="min-h-screen bg-white">
+      {/* Navbar — iOS style */}
+      <nav
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+          scrolled || !isHome
+            ? 'bg-white/85 backdrop-blur-xl backdrop-saturate-150 border-b border-black/5'
+            : 'bg-transparent'
+        }`}
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
+        <div className="page-container">
+          <div className="flex items-center justify-between h-12 sm:h-14">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2.5">
-              <img src="/logo.png" alt="SMC" className="h-9 w-auto" />
-              <span className={`text-lg font-extrabold tracking-tight ${isHome && !scrolled ? 'text-white' : 'text-gray-900'}`}>
-                SMC Training
-              </span>
+            <Link
+              to="/"
+              className="flex items-center gap-2 group"
+            >
+              <img src="/logo.png" alt="SMC Training" className="h-8 sm:h-9 w-auto" />
+              <span className="text-xs sm:text-sm font-semibold text-[#007AFF] tracking-tight">SMC TRAINING</span>
             </Link>
 
-            {/* Desktop nav */}
-            <nav className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <NavLink
-                  key={link.to}
-                  to={link.to}
-                  end={link.to === '/'}
-                  className={({ isActive }) =>
-                    `px-3.5 py-2 rounded-ios-lg text-sm font-medium transition-all duration-150 ${
-                      isActive
-                        ? isHome && !scrolled
-                          ? 'bg-white/20 text-white'
-                          : 'bg-smc-50 text-smc-600'
-                        : linkClasses
-                    }`
-                  }
-                >
+            {/* Desktop Nav — iOS style */}
+            <div className="hidden lg:flex items-center gap-1">
+              {[
+                { to: '/', label: 'Trang chủ' },
+                { to: '/gioi-thieu', label: 'Giới thiệu' },
+                { to: '/hinh-anh', label: 'Hình ảnh' },
+                { to: '/lich-thi', label: 'Lịch thi' },
+                { to: '/tra-cuu', label: 'Tra cứu' },
+              ].map(link => (
+                <Link key={link.to} to={link.to}
+                  className={`text-[0.8125rem] font-medium px-3 py-1.5 rounded-full transition-colors duration-200 ${
+                    location.pathname === link.to
+                      ? 'text-[#007AFF] bg-[#007AFF]/8'
+                      : 'text-[#1C1C1E] hover:text-[#007AFF] hover:bg-[#007AFF]/5'
+                  }`}>
                   {link.label}
-                </NavLink>
+                </Link>
               ))}
-              <Link
-                to="/login"
-                className={`ml-3 px-5 py-2 rounded-ios-lg text-sm font-semibold transition-all duration-150 ${
-                  isHome && !scrolled
-                    ? 'bg-white/20 text-white hover:bg-white/30'
-                    : 'bg-smc-500 text-white hover:bg-smc-600 shadow-ios-btn'
-                }`}
-              >
-                Đăng nhập
-              </Link>
-            </nav>
+              {user && (
+                <Link
+                  to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'}
+                  className="text-[0.8125rem] font-medium px-3 py-1.5 rounded-full text-[#007AFF] bg-[#007AFF]/8 hover:bg-[#007AFF]/12 transition-colors"
+                >
+                  Vào hệ thống
+                </Link>
+              )}
+            </div>
 
-            {/* Mobile menu button */}
+            {/* Desktop Right — iOS style */}
+            <div className="hidden lg:flex items-center gap-2">
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <Link to="/profile" className="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-black/5 transition-colors">
+                    <div className="w-7 h-7 rounded-full bg-[#007AFF] flex items-center justify-center text-white text-xs font-semibold">
+                      {user.fullName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="text-left">
+                      <p className="text-[0.8125rem] font-medium text-[#1C1C1E] leading-tight">{user.fullName}</p>
+                      <p className="text-[0.6875rem] text-[#8E8E93]">{ROLE_LABELS?.[user?.role]?.label || user?.role}</p>
+                    </div>
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 text-[#8E8E93] hover:text-[#FF3B30] hover:bg-red-50 rounded-full transition-colors"
+                    title="Đăng xuất"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Link to="/login" className="btn-ghost text-[0.8125rem] py-1.5">
+                    Đăng nhập
+                  </Link>
+                  <Link to="/register" className="btn-primary text-[0.8125rem] py-1.5 px-4">
+                    Đăng ký
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Mobile Menu Button — iOS style */}
             <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className={`md:hidden p-2 rounded-ios-lg ${isHome && !scrolled ? 'text-white hover:bg-white/10' : 'text-gray-600 hover:bg-gray-100'}`}
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="lg:hidden p-2 text-[#1C1C1E] hover:bg-black/5 rounded-full transition-colors"
+              aria-label="Menu"
             >
-              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile nav */}
-        {menuOpen && (
-          <div className="md:hidden bg-white border-t border-gray-100 shadow-lg animate-slide-down">
-            <div className="px-4 py-3 space-y-1">
-              {navLinks.map((link) => (
-                <NavLink
-                  key={link.to}
-                  to={link.to}
-                  end={link.to === '/'}
-                  className={({ isActive }) =>
-                    `block px-3 py-2.5 rounded-ios-lg text-sm font-medium transition-colors ${
-                      isActive ? 'bg-smc-50 text-smc-600' : 'text-gray-600 hover:bg-gray-50'
-                    }`
-                  }
-                >
+        {/* Mobile Menu — iOS Sheet style */}
+        {mobileOpen && (
+          <div className="lg:hidden border-t border-black/5 bg-white animate-slide-down">
+            <div className="page-container py-3 space-y-0.5">
+              {[
+                { to: '/', label: 'Trang chủ' },
+                { to: '/gioi-thieu', label: 'Giới thiệu' },
+                { to: '/hinh-anh', label: 'Hình ảnh' },
+                { to: '/lich-thi', label: 'Lịch thi' },
+                { to: '/tra-cuu', label: 'Tra cứu' },
+              ].map(link => (
+                <Link key={link.to} to={link.to} onClick={() => setMobileOpen(false)}
+                  className={`block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium transition-colors ${
+                    location.pathname === link.to
+                      ? 'text-[#007AFF] bg-[#007AFF]/8'
+                      : 'text-[#1C1C1E] hover:bg-black/5'
+                  }`}>
                   {link.label}
-                </NavLink>
+                </Link>
               ))}
-              <Link
-                to="/login"
-                className="block w-full text-center mt-2 px-5 py-2.5 bg-smc-500 text-white text-sm font-semibold rounded-ios-lg"
-              >
-                Đăng nhập
-              </Link>
+              {user ? (
+                <>
+                  <Link
+                    to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'}
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#007AFF] bg-[#007AFF]/8"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    to="/profile"
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#1C1C1E] hover:bg-black/5"
+                  >
+                    Tài khoản của tôi
+                  </Link>
+                  <button
+                    onClick={() => { handleLogout(); setMobileOpen(false); }}
+                    className="w-full text-left px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#FF3B30] hover:bg-red-50"
+                  >
+                    Đăng xuất
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileOpen(false)}
+                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#1C1C1E] hover:bg-black/5"
+                  >
+                    Đăng nhập
+                  </Link>
+                  <Link
+                    to="/register"
+                    onClick={() => setMobileOpen(false)}
+                    className="block w-full text-center btn-primary mt-1"
+                  >
+                    Đăng ký khóa học
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
-      </header>
+      </nav>
 
-      {/* Main content */}
-      <main className="flex-1">
+      {/* Main Content */}
+      <main className={isHome ? '' : 'pt-12 sm:pt-14'}>
         <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            {/* Brand */}
-            <div className="md:col-span-1">
-              <div className="flex items-center gap-2.5 mb-4">
-                <img src="/logo.png" alt="SMC" className="h-8 w-auto brightness-0 invert opacity-80" />
-                <span className="text-lg font-extrabold text-white tracking-tight">SMC Training</span>
-              </div>
-              <p className="text-sm leading-relaxed">
-                Trung tâm đào tạo và sát hạch UAV hàng đầu Việt Nam. Cung cấp giải pháp đào tạo toàn diện theo tiêu chuẩn Cục Hàng không.
+      {/* Footer — iOS style */}
+      <footer className="bg-[#F2F2F7] text-[#8E8E93] pt-12 pb-8 border-t border-black/5">
+        <div className="page-container">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+            <div className="sm:col-span-2 lg:col-span-1">
+              <img src="/logo.png" alt="SMC Training" className="h-8 w-auto mb-3 opacity-80" />
+              <p className="text-[0.8125rem] text-[#8E8E93] max-w-xs leading-relaxed">
+                Trung tâm Đào tạo Ứng dụng Công nghệ SMC — Đơn vị đào tạo phi công UAV theo NĐ 288/2025 & TT 146/2025.
               </p>
             </div>
-
-            {/* Links */}
             <div>
-              <h4 className="text-white text-sm font-semibold mb-4">Liên kết nhanh</h4>
-              <ul className="space-y-2.5 text-sm">
-                <li><Link to="/" className="hover:text-white transition-colors">Trang chủ</Link></li>
-                <li><Link to="/gioi-thieu" className="hover:text-white transition-colors">Giới thiệu</Link></li>
-                <li><Link to="/hinh-anh" className="hover:text-white transition-colors">Hình ảnh</Link></li>
-                <li><Link to="/lich-thi" className="hover:text-white transition-colors">Lịch thi</Link></li>
-                <li><Link to="/tra-cuu" className="hover:text-white transition-colors">Tra cứu chứng chỉ</Link></li>
-              </ul>
-            </div>
-
-            {/* Contact */}
-            <div>
-              <h4 className="text-white text-sm font-semibold mb-4">Liên hệ</h4>
-              <ul className="space-y-2.5 text-sm">
-                <li>info@smc-training.com</li>
-                <li>024 1234 5678</li>
-                <li>Hà Nội, Việt Nam</li>
-              </ul>
-            </div>
-
-            {/* Social */}
-            <div>
-              <h4 className="text-white text-sm font-semibold mb-4">Kết nối</h4>
-              <div className="flex gap-3">
-                <a href="#" className="w-9 h-9 rounded-ios-lg bg-gray-800 flex items-center justify-center hover:bg-smc-500 transition-colors">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                </a>
-                <a href="#" className="w-9 h-9 rounded-ios-lg bg-gray-800 flex items-center justify-center hover:bg-smc-500 transition-colors">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
-                </a>
-                <a href="#" className="w-9 h-9 rounded-ios-lg bg-gray-800 flex items-center justify-center hover:bg-smc-500 transition-colors">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678a6.162 6.162 0 100 12.324 6.162 6.162 0 100-12.324zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405a1.441 1.441 0 11-2.882 0 1.441 1.441 0 012.882 0z"/></svg>
-                </a>
+              <h4 className="text-[#1C1C1E] font-semibold mb-3 text-[0.8125rem]">Liên kết nhanh</h4>
+              <div className="space-y-2">
+                <Link to="/" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Trang chủ</Link>
+                <Link to="/login" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Đăng nhập</Link>
+                <Link to="/register" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Đăng ký</Link>
               </div>
             </div>
+            <div>
+              <h4 className="text-[#1C1C1E] font-semibold mb-3 text-[0.8125rem]">Liên hệ</h4>
+              <div className="space-y-2 text-[0.8125rem] text-[#8E8E93]">
+                <p>📍 Số 59 Nguyễn Thị Hoa, KP Thanh Bình, Xã Đất Đỏ, TP.HCM</p>
+                <p>📞 1900 638939</p>
+                <p>✉️ support@smartconnect.com.vn</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-[0.6875rem] text-[#AEAEB2] mt-1">Mã số DN: 0315541034-001</p>
+            </div>
           </div>
-
-          <div className="border-t border-gray-800 mt-10 pt-6 text-center text-sm">
-            <p>&copy; {new Date().getFullYear()} SMC Training. Tất cả quyền được bảo lưu.</p>
+          <div className="border-t border-black/5 pt-6 text-center text-[0.75rem] text-[#AEAEB2]">
+            &copy; {new Date().getFullYear()} SMC Training. Tất cả quyền được bảo lưu.
           </div>
         </div>
       </footer>

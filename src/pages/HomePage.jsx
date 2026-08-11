@@ -1,200 +1,201 @@
 import { Link } from 'react-router-dom';
-import { Award, BookOpen, Users, Shield, ChevronRight, Star, ArrowRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import {
+  Shield,
+  Users,
+  Wrench,
+  Award,
+  Target,
+  HeadphonesIcon,
+  CheckCircle,
+  ArrowRight,
+  Star,
+} from 'lucide-react';
 
 const stats = [
-  { value: '3', label: 'Khóa đào tạo', suffix: '' },
-  { value: '57+', label: 'Học viên', suffix: '' },
-  { value: '4+', label: 'Giảng viên kỳ cựu', suffix: '' },
-];
-
-const features = [
-  {
-    icon: Shield,
-    title: 'Đào tạo chuyên sâu',
-    description: 'Chương trình đào tạo bài bản, kết hợp lý thuyết và thực hành bay thực tế với thiết bị hiện đại.',
-  },
-  {
-    icon: Award,
-    title: 'Chứng chỉ quốc gia',
-    description: 'Chứng chỉ được cấp theo Nghị định 288/2025/NĐ-CP, có giá trị pháp lý trên toàn quốc.',
-  },
-  {
-    icon: BookOpen,
-    title: 'Giảng viên kỳ cựu',
-    description: 'Đội ngũ giảng viên giàu kinh nghiệm, từng công tác trong lực lượng không quân và hàng không dân dụng.',
-  },
-  {
-    icon: Users,
-    title: 'Hỗ trợ 24/7',
-    description: 'Đội ngũ tư vấn và hỗ trợ kỹ thuật luôn sẵn sàng giải đáp mọi thắc mắc của học viên.',
-  },
+  { value: '2', label: 'Hạng chứng chỉ UAV' },
+  { value: 'Hạng A', label: 'VLOS — 140h' },
+  { value: 'Hạng B', label: 'BVLOS — 296h' },
 ];
 
 const courses = [
   {
-    id: 1,
-    title: 'Khóa đào tạo VLOS',
-    subtitle: 'Visual Line of Sight',
-    description: 'Đào tạo phi công UAV trong tầm nhìn trực quan. Phù hợp với người mới bắt đầu, bao gồm lý thuyết hàng không, quy định pháp luật và thực hành bay cơ bản.',
-    duration: '8 tuần',
-    level: 'Cơ bản',
+    id: 'uav-a',
+    title: 'Chứng chỉ UAV Hạng A — VLOS',
+    subtitle: 'Bay trong tầm nhìn trực quan',
+    badge: 'Cơ bản',
+    badgeColor: 'bg-blue-500',
+    duration: '140h (Lý thuyết 42h + Thực hành 84h + Ôn luyện 14h)',
+    modules: '6 Học phần',
+    features: [
+      'Pháp luật & quy định về UAV (NĐ 288)',
+      'Khí tượng & môi trường bay (TT 146)',
+      'Kiến thức hàng không & nguyên lý bay',
+      'Vận hành an toàn & quy trình bay',
+      'Kỹ năng bay thực hành trong tầm nhìn',
+      'Xử lý tình huống khẩn cấp',
+    ],
+    highlighted: false,
   },
   {
-    id: 2,
-    title: 'Khóa đào tạo BVLOS',
-    subtitle: 'Beyond Visual Line of Sight',
-    description: 'Đào tạo phi công UAV ngoài tầm nhìn trực quan. Dành cho học viên đã có chứng chỉ VLOS, tập trung vào bay tự động và điều khiển từ xa.',
-    duration: '12 tuần',
-    level: 'Nâng cao',
-  },
-  {
-    id: 3,
-    title: 'Sát hạch & Cấp chứng chỉ',
-    subtitle: 'Examination & Certification',
-    description: 'Kỳ thi sát hạch chính thức để cấp chứng chỉ phi công UAV theo quy định của Cục Hàng không Việt Nam.',
-    duration: '1-2 ngày',
-    level: 'Đánh giá',
+    id: 'uav-b-bvlos',
+    title: 'Chứng chỉ UAV Hạng B — BVLOS',
+    subtitle: 'Bay ngoài tầm nhìn — Chuyên sâu',
+    badge: 'Phổ biến nhất',
+    badgeColor: 'bg-amber-500',
+    duration: '296h (Lý thuyết 88h + Thực hành 178h + Ôn luyện 30h)',
+    modules: '6 Học phần',
+    features: [
+      'Nguyên lý bay tầm xa BVLOS',
+      'Hệ thống & công nghệ UAV tiên tiến',
+      'Thiết bị dẫn đường & camera chuyên dụng',
+      'Lập kế hoạch bay tự động (NĐ 288)',
+      'Quản lý mối đe dọa & rủi ro (TT 146)',
+      'Quy trình khẩn cấp & dự phòng',
+    ],
+    highlighted: true,
   },
 ];
 
+const advantages = [
+  { icon: Shield, title: 'Trung tâm được cấp phép', desc: 'Hoạt động theo Nghị định 288/2025/NĐ-CP & Thông tư 146/2025/TT-BQP' },
+  { icon: Users, title: 'Giảng viên, Chuyên gia', desc: 'Bằng cấp phù hợp + kinh nghiệm thực tế' },
+  { icon: Wrench, title: 'Thiết bị hiện đại', desc: 'Sân bay, thiết bị UAV đời mới nhất' },
+  { icon: Award, title: '2 Hạng chứng chỉ', desc: 'Hạng A — VLOS (140h: LT 42h + TH 84h + Ôn 14h), Hạng B — BVLOS (296h: LT 88h + TH 178h + Ôn 30h)' },
+  { icon: Target, title: 'Thực hành trọng tâm', desc: '60% thời lượng là thực hành bay thực tế' },
+  { icon: HeadphonesIcon, title: 'Hỗ trợ sau khóa học', desc: 'Kết nối việc làm, hỗ trợ kỹ thuật sau chứng chỉ' },
+];
+
+const process = [
+  { step: 1, title: 'Đăng ký', desc: 'Điền form đăng ký và chọn khóa học phù hợp' },
+  { step: 2, title: 'Học lý thuyết', desc: 'Hoàn thành các học phần lý thuyết trực tuyến & trực tiếp' },
+  { step: 3, title: 'Thực hành bay', desc: 'Thực hành bay thực tế tại sân bay & phòng mô phỏng' },
+  { step: 4, title: 'Sát hạch & Chứng chỉ', desc: 'Thi sát hạch cuối khóa & nhận chứng chỉ chính thức' },
+];
+
 export default function HomePage() {
+  const { user } = useAuth();
+
   return (
     <div>
-      {/* Hero */}
-      <section className="relative min-h-[85vh] flex items-center bg-gradient-to-br from-smc-600 via-smc-700 to-smc-900 overflow-hidden">
-        {/* Overlay pattern */}
-        <div
-          className="absolute inset-0 opacity-[0.03] pointer-events-none"
-          style={{
-            backgroundImage: 'radial-gradient(circle at 25px 25px, white 1px, transparent 0)',
-            backgroundSize: '50px 50px',
-          }}
-        />
+      {/* Hero Section — iOS style */}
+      <section className="relative min-h-screen flex items-center overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#F0F7FF] via-white to-[#F0FDFB]" />
+        <div className="absolute top-20 right-10 w-72 h-72 bg-[#007AFF]/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#5AC8FA]/8 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-[#007AFF]/4 rounded-full blur-2xl" />
 
-        {/* Gradient orbs */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-smc-400/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-accent-400/8 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
-          <div className="max-w-3xl animate-slide-up">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-ios-full bg-white/10 backdrop-blur-md text-white/80 text-xs font-medium mb-6 ring-1 ring-white/10">
-              <Star className="w-3.5 h-3.5 text-accent-400" />
-              Theo Nghị định 288/2025/NĐ-CP & Thông tư 146/2025/TT-BQP
+        <div className="page-container relative z-10 py-20">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#007AFF]/8 border border-[#007AFF]/15 text-[#007AFF] text-[0.75rem] font-semibold mb-6">
+              <Star className="w-3.5 h-3.5 fill-[#007AFF] text-[#007AFF]" />
+              Hoạt động theo Nghị định 288/2025 và thông tư 146/2025
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-tight mb-6">
-              Trung tâm Đào tạo<br />
-              <span className="text-accent-400">Phi công UAV</span>
-              <br />SMC Training
+            <h1 className="text-[2.5rem] sm:text-[3rem] lg:text-[3.5rem] font-bold text-[#1C1C1E] leading-[1.08] tracking-tight animate-fade-in">
+              Trung tâm Đào tạo
+              <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#007AFF] to-[#5AC8FA]">
+                Ứng dụng Công nghệ SMC
+              </span>
             </h1>
 
-            <p className="text-lg text-white/70 leading-relaxed max-w-xl mb-10">
-              Đào tạo chuyên nghiệp theo tiêu chuẩn Cục Hàng không Việt Nam. Cam kết đầu ra, hỗ trợ việc làm sau tốt nghiệp.
+            <p className="mt-6 text-[1.0625rem] sm:text-[1.125rem] text-[#8E8E93] max-w-2xl leading-relaxed animate-fade-in">
+              Chương trình đào tạo phi công UAV chuyên nghiệp.
+              Hoạt động theo Nghị định 288/2025/NĐ-CP và Thông tư 146/2025/TT-BQP về quản lý tàu bay không người lái.
+              Cấp chứng chỉ UAV Hạng A — VLOS (140h) và Hạng B — BVLOS (296h).
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link
-                to="/register"
-                className="btn-primary bg-white text-smc-700 hover:bg-gray-100 py-3 px-8 text-base shadow-ios-lg shadow-black/10"
-              >
-                Đăng ký ngay
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Link>
-              <Link
-                to="/tra-cuu"
-                className="inline-flex items-center justify-center px-8 py-3 text-white/90 hover:text-white text-sm font-semibold rounded-ios-lg border border-white/20 hover:border-white/40 backdrop-blur-sm transition-all duration-200"
-              >
-                Tra cứu chứng chỉ
-                <ChevronRight className="w-4 h-4 ml-1.5" />
-              </Link>
+            <div className="mt-10 flex flex-wrap gap-4 animate-slide-up">
+              {user ? (
+                <Link to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'} className="btn-primary text-base px-8 py-3 inline-flex items-center gap-2">
+                  Vào hệ thống
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              ) : (
+                <>
+                  <Link to="/register" className="btn-primary text-base px-8 py-3 inline-flex items-center gap-2">
+                    Đăng ký khóa học
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                  <Link to="/login" className="btn-outline text-base px-8 py-3">
+                    Đăng nhập hệ thống
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Stats Bar — iOS style */}
+            <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white/70 backdrop-blur-xl backdrop-saturate-150 rounded-2xl p-6 sm:p-8 shadow-ios animate-slide-up border border-black/5">
+              {stats.map((s, i) => (
+                <div key={i} className="text-center">
+                  <div className="text-[1.5rem] sm:text-[1.75rem] font-bold text-[#007AFF]">{s.value}</div>
+                  <div className="text-[0.75rem] sm:text-[0.8125rem] text-[#8E8E93] mt-1">{s.label}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-
-        {/* Bottom fade */}
-        <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none" />
       </section>
 
-      {/* Stats */}
-      <section className="relative z-10 -mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-3 gap-4 sm:gap-6">
-            {stats.map((stat, idx) => (
-              <div
-                key={idx}
-                className="bg-white rounded-ios-2xl shadow-ios-lg p-6 text-center animate-slide-up"
-                style={{ animationDelay: `${idx * 100}ms` }}
-              >
-                <div className="stat-value text-smc-600">{stat.value}</div>
-                <div className="stat-label">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="py-20 lg:py-28">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-3">
-              Tại sao chọn <span className="text-smc-600">SMC Training</span>?
-            </h2>
-            <p className="text-gray-500 max-w-lg mx-auto">
-              Chúng tôi cam kết mang đến chương trình đào tạo UAV chất lượng cao nhất, đáp ứng mọi tiêu chuẩn của Cục Hàng không Việt Nam.
+      {/* Courses Section — iOS style */}
+      <section id="courses" className="py-20 sm:py-32 bg-[#F2F2F7]">
+        <div className="page-container">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="section-title">Chương trình đào tạo</h2>
+            <p className="section-subtitle mx-auto">
+              Lựa chọn khóa học UAV phù hợp với mục tiêu nghề nghiệp của bạn
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature, idx) => (
-              <div key={idx} className="card card-hover group">
-                <div className="w-12 h-12 rounded-ios-xl bg-smc-50 flex items-center justify-center mb-4 group-hover:bg-smc-100 transition-colors">
-                  <feature.icon className="w-6 h-6 text-smc-600" />
-                </div>
-                <h3 className="text-base font-bold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Courses */}
-      <section className="py-20 lg:py-28 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-3">
-              Các khóa đào tạo
-            </h2>
-            <p className="text-gray-500 max-w-lg mx-auto">
-              Lộ trình đào tạo từ cơ bản đến nâng cao, phù hợp với mọi đối tượng học viên.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {courses.map((course) => (
-              <div key={course.id} className="card card-hover flex flex-col">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <span className="badge badge-info mb-2">{course.level}</span>
-                    <h3 className="text-lg font-bold text-gray-900 mt-2">{course.title}</h3>
-                    <p className="text-sm text-smc-600 font-medium">{course.subtitle}</p>
+              <div
+                key={course.id}
+                className={`relative bg-white rounded-2xl shadow-ios transition-all duration-200 ${
+                  course.highlighted ? 'ring-2 ring-[#FF9500]/50 shadow-ios-md' : ''
+                }`}
+              >
+                {course.highlighted && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className={`badge text-white ${course.badgeColor} px-3 py-1 shadow-sm`}>
+                      {course.badge}
+                    </span>
                   </div>
-                </div>
+                )}
+                <div className="p-6 sm:p-8">
+                  <h3 className="text-xl font-semibold text-[#1C1C1E] mb-1">{course.title}</h3>
+                  <p className="text-[0.8125rem] text-[#8E8E93] mb-6">{course.subtitle}</p>
 
-                <p className="text-sm text-gray-500 leading-relaxed mb-6 flex-1">
-                  {course.description}
-                </p>
+                  <div className="flex gap-4 mb-6">
+                    <div className="flex-1 bg-[#F2F2F7] rounded-xl p-3 text-center">
+                      <div className="text-[1.0625rem] font-bold text-[#007AFF]">{course.duration}</div>
+                      <div className="text-[0.6875rem] text-[#8E8E93]">Thời lượng</div>
+                    </div>
+                    <div className="flex-1 bg-[#F2F2F7] rounded-xl p-3 text-center">
+                      <div className="text-[1.0625rem] font-bold text-[#5AC8FA]">{course.modules}</div>
+                      <div className="text-[0.6875rem] text-[#8E8E93]">Học phần</div>
+                    </div>
+                  </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <span className="text-xs text-gray-400">Thời lượng: {course.duration}</span>
+                  <ul className="space-y-2.5 mb-8">
+                    {course.features.map((f, i) => (
+                      <li key={i} className="flex items-start gap-2.5 text-[0.875rem] text-[#1C1C1E]/80">
+                        <CheckCircle className="w-4 h-4 text-[#34C759] flex-shrink-0 mt-0.5" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+
                   <Link
-                    to="/register"
-                    className="inline-flex items-center gap-1 text-sm font-semibold text-smc-600 hover:text-smc-700 transition-colors"
+                    to={user ? (user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student') : '/register'}
+                    className={`block text-center py-3 rounded-full font-semibold text-[0.875rem] transition-all duration-200 ${
+                      course.highlighted
+                        ? 'bg-[#FF9500] text-white hover:bg-[#E68600] shadow-sm'
+                        : 'bg-[#F2F2F7] text-[#007AFF] hover:bg-[#007AFF]/10'
+                    }`}
                   >
-                    Đăng ký
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    Đăng ký ngay
                   </Link>
                 </div>
               </div>
@@ -203,22 +204,91 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-16 lg:py-20 bg-gradient-to-r from-smc-600 to-smc-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl lg:text-3xl font-extrabold text-white mb-4">
-            Sẵn sàng trở thành Phi công UAV chuyên nghiệp?
+      {/* Advantages Section */}
+      <section className="py-20 sm:py-32">
+        <div className="page-container">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="section-title">Lợi thế của SMC Training</h2>
+            <p className="section-subtitle mx-auto">
+              Những lý do để chọn SMC Training cho hành trình trở thành phi công UAV chuyên nghiệp
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
+            {advantages.map((item, i) => (
+              <div
+                key={i}
+                className="bg-white rounded-2xl p-6 shadow-ios group cursor-default transition-all duration-200"
+                style={{ animationDelay: `${i * 100}ms` }}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[#F2F2F7] flex items-center justify-center mb-4 group-hover:bg-[#007AFF]/10 transition-colors">
+                  <item.icon className="w-6 h-6 text-[#007AFF]" />
+                </div>
+                <h3 className="font-semibold text-[#1C1C1E] mb-1.5">{item.title}</h3>
+                <p className="text-[0.875rem] text-[#8E8E93] leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Process Section — iOS style */}
+      <section className="py-20 sm:py-32 bg-[#F2F2F7]">
+        <div className="page-container">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="section-title">Quy trình đào tạo</h2>
+            <p className="section-subtitle mx-auto">
+              4 bước đơn giản để trở thành phi công UAV được cấp chứng chỉ
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-5xl mx-auto">
+            {process.map((p, i) => (
+              <div key={i} className="text-center relative">
+                {i < process.length - 1 && (
+                  <div className="hidden lg:block absolute top-6 left-[60%] w-[80%] h-0.5 bg-black/10">
+                    <div className="absolute right-0 -top-1 w-2 h-2 rounded-full bg-[#007AFF]" />
+                  </div>
+                )}
+                <div className="w-12 h-12 rounded-full bg-[#007AFF] text-white flex items-center justify-center text-lg font-bold mx-auto mb-4 shadow-[0_4px_12px_rgba(0,122,255,0.25)]">
+                  {p.step}
+                </div>
+                <h3 className="font-semibold text-[#1C1C1E] mb-1.5">{p.title}</h3>
+                <p className="text-[0.875rem] text-[#8E8E93]">{p.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section — iOS style */}
+      <section className="py-20 sm:py-32 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#007AFF] to-[#0062CC]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent_50%)]" />
+
+        <div className="page-container relative z-10 text-center">
+          <h2 className="text-[1.75rem] sm:text-[2.25rem] font-bold text-white mb-4 tracking-tight">
+            Sẵn sàng trở thành phi công UAV chuyên nghiệp?
           </h2>
-          <p className="text-white/70 max-w-md mx-auto mb-8">
-            Đăng ký ngay hôm nay để nhận tư vấn miễn phí và ưu đãi học phí đặc biệt.
+          <p className="text-[1.0625rem] text-white/70 max-w-xl mx-auto mb-8">
+            Đăng ký ngay hôm nay để bắt đầu hành trình chinh phục bầu trời cùng SMC Training
           </p>
-          <Link
-            to="/register"
-            className="btn-primary bg-white text-smc-700 hover:bg-gray-100 py-3 px-10 text-base"
-          >
-            Đăng ký ngay
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Link>
+          <div className="flex flex-wrap justify-center gap-4">
+            {user ? (
+              <Link to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'} className="px-8 py-3.5 bg-white text-[#007AFF] font-semibold rounded-full hover:bg-white/90 transition-colors shadow-ios-md">
+                Vào hệ thống
+              </Link>
+            ) : (
+              <>
+                <Link to="/register" className="px-8 py-3.5 bg-white text-[#007AFF] font-semibold rounded-full hover:bg-white/90 transition-colors shadow-ios-md">
+                  Đăng ký khóa học
+                </Link>
+                <Link to="/login" className="px-8 py-3.5 border-2 border-white/30 text-white font-semibold rounded-full hover:bg-white/10 transition-colors">
+                  Đăng nhập
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </section>
     </div>
