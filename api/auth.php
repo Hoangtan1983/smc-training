@@ -949,7 +949,9 @@ if (($parts[0] ?? '') === 'users' || (($parts[0] ?? '') === 'auth' && ($parts[1]
         if (!$u) jsonResponse(['error' => 'Không tìm thấy người dùng'], 404);
         jsonResponse(sanitizeUser($u));
     }
-    if ($method === 'POST' && !$userId) {
+    if ($method === 'POST') {
+        // POST với userId → không hợp lệ (không thể POST vào user cụ thể)
+        if ($userId) jsonResponse(['error' => 'Không thể tạo user với ID cụ thể. Dùng POST /api/users'], 400);
         $auth = requireRole(['ADMIN', 'STAFF']);
         $input = jsonInput();
         if (!$input['email'] || !$input['password'] || !$input['fullName']) jsonResponse(['error' => 'Thiếu thông tin'], 400);
