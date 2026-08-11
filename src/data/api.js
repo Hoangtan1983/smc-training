@@ -110,7 +110,7 @@ export function getUsers(params = {}) {
 }
 
 export function getUser(id) {
-  return apiCall(`/api/auth.php?action=get&id=${id}`);
+  return apiCall(`/api/auth.php?action=users/${id}`);
 }
 
 export function createUser(data) {
@@ -134,7 +134,7 @@ export function deleteUser(id) {
 }
 
 export function approveUser(id) {
-  return apiCall(`/api/auth.php?action=approve&id=${id}`, {
+  return apiCall(`/api/approve-student/${id}`, {
     method: 'POST',
   });
 }
