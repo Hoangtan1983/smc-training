@@ -21,90 +21,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// ── Helpers (duy nhất) ──
-// Auth functions được cung cấp bởi auth-lib.php (các hàm al*) và helpers.php (findUserByEmail, findUserById, sanitizeUser...)
-// Chỉ giữ genId() vì không có trong các file shared, và loadData/saveData với cơ chế cache in-memory.
+// ── Shared libraries (single source of truth) ──
+require_once __DIR__ . '/helpers.php';      // loadData, saveData, sanitizeUser, findUserByEmail, findUserById, genId, ...
+require_once __DIR__ . '/auth-lib.php';     // alGetToken, alCreateToken, alVerifyToken, alRequireRole, ...
 
-function genId($prefix = 'u-') {
-    return $prefix . bin2hex(random_bytes(8));
+// ── Alias functions for backward compatibility ──
+// Tất cả code trong file này dùng tên hàm ngắn (không prefix al*)
+function getTokenFromRequest() { return alGetToken(); }
+function setTokenCookie($token) { alSetTokenCookie($token); }
+function clearTokenCookie() { alClearTokenCookie(); }
+function createToken($user) { return alCreateToken($user); }
+function verifyToken($token) { return alVerifyToken($token); }
+function authenticate() { return alAuthenticate(); }
+function jsonResponse($data, $code = 200) { alJsonResponse($data, $code); }
+function jsonInput() { return alJsonInput(); }
+function getClientIP() { return alGetClientIP(); }
+function rateLimit($key, $maxRequests, $windowSeconds, $errorMessage) {
+    return alRateLimit($key, $maxRequests, $windowSeconds, $errorMessage);
 }
 
-// ── Data Store (file-based with caching) ──
-$dataDir = __DIR__ . '/data';
-if (!is_dir($dataDir)) {
-    mkdir($dataDir, 0750, true);
+function requireRole($allowedRoles) {
+    $auth = alAuthenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+    if (!in_array($auth['role'], $allowedRoles)) jsonResponse(['error' => 'Forbidden'], 403);
+    return $auth;
 }
 
-// In-memory cache để tránh đọc file liên tục
-$dataCache = [];
-$cacheTime = [];
-
-function loadData($file, $ttl = 5) {
-    global $dataDir, $dataCache, $cacheTime;
-    $now = microtime(true);
-
-    // Trả về cache nếu còn tươi (TTL = 5 giây)
-    if (isset($dataCache[$file]) && ($now - ($cacheTime[$file] ?? 0)) < $ttl) {
-        return $dataCache[$file];
-    }
-
-    $path = $dataDir . '/' . $file . '.json';
-    if (!file_exists($path)) {
-        $dataCache[$file] = [];
-        $cacheTime[$file] = $now;
-        return [];
-    }
-    $data = json_decode(file_get_contents($path), true) ?: [];
-    $dataCache[$file] = $data;
-    $cacheTime[$file] = $now;
-    return $data;
-}
-
-function saveData($file, $data) {
-    global $dataDir, $dataCache, $cacheTime;
-    $path = $dataDir . '/' . $file . '.json';
-    $now = microtime(true);
-    // Atomic write: ghi ra file tạm rồi rename
-    $tmp = $path . '.tmp.' . getmypid();
-    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-    if ($json === false) {
-        error_log("[SMC] JSON encode failed for {$file}: " . json_last_error_msg());
-        return false;
-    }
-    $written = file_put_contents($tmp, $json, LOCK_EX);
-    if ($written === false) {
-        error_log("[SMC] file_put_contents failed for {$tmp}. Dir writable? " . (is_writable($dataDir) ? 'yes' : 'no') . ". Disk space: " . disk_free_space($dataDir));
-        return false;
-    }
-    if (!rename($tmp, $path)) {
-        error_log("[SMC] rename failed: {$tmp} → {$path}");
-        @unlink($tmp);
-        return false;
-    }
-    // Cập nhật cache CHỈ KHI ghi file thành công
-    $dataCache[$file] = $data;
-    $cacheTime[$file] = $now;
-    return true;
-}
-
-// ── Unified Payment Processing ──
-// Tập trung logic xử lý thanh toán + kích hoạt + enrollment + email
-/**
- * DEPRECATED — processPaymentInternal
- *
- * ⚠️  Hàm này KHÔNG còn được sử dụng cho các thao tác học phí mới.
- * Tất cả thao tác học phí phải qua tuition-service.php:
- *   - record-payment   (Staff ghi nhận thu tiền)
- *   - confirm-receipt   (Accountant/Admin duyệt phiếu thu)
- *
- * Hàm này CHỈ giữ lại để tương thích ngược với các endpoint wrapper cũ
- * (approve-student, partial-approve, confirm-payment).
- * Các wrapper này sẽ sớm được thay thế hoàn toàn.
- *
- * ⚠️  QUAN TRỌNG: Hàm này ghi invoices + transactions + users + enrollments
- * SONG SONG với tuition-service.php. Nếu cả 2 cùng chạy sẽ gây ĐÈ DỮ LIỆU.
- * Luôn ưu tiên tuition-service.php cho thao tác mới.
- */
+// ── Legacy wrapper: gọi trực tiếp processPaymentInternal ──
 function processPaymentInternal($input, $auth) {
     // ── FALLBACK: Gọi tuition-service.php nếu có thể ──
     // Trong tương lai, tất cả wrapper sẽ gọi trực tiếp tuition-service.php
@@ -398,12 +341,7 @@ function processPaymentInternal($input, $auth) {
 
     // Sync agency commission
     if ($agencyId && $discountPercent > 0) {
-        $dataDir = __DIR__ . '/data';
-        $commissions = [];
-        $commPath = $dataDir . '/agency_commissions.json';
-        if (file_exists($commPath)) {
-            $commissions = json_decode(file_get_contents($commPath), true) ?: [];
-        }
+        $commissions = loadData('agency_commissions');
         $foundComm = false;
         foreach ($commissions as &$comm) {
             if (($comm['invoiceId'] ?? '') === $invoiceId) {
@@ -432,9 +370,7 @@ function processPaymentInternal($input, $auth) {
                 'updatedAt' => $now,
             ];
         }
-        $commTmp = $commPath . '.tmp.' . getmypid();
-        file_put_contents($commTmp, json_encode($commissions, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
-        rename($commTmp, $commPath);
+        saveData('agency_commissions', $commissions);
     }
 
     // Send email (non-critical)
@@ -704,65 +640,8 @@ function initSeed() {
 initSeed();
 
 // ── Shared Auth Library (v4) ──
-// Tất cả auth functions được tập trung trong auth-lib.php
-// auth.php giữ backward compatibility qua alias functions
-require_once __DIR__ . '/auth-lib.php';
-
-// Aliases cho backward compatibility với code hiện tại trong auth.php
-// (các hàm này được gọi trực tiếp từ routes bên dưới)
-function getTokenFromRequest() { return alGetToken(); }
-function setTokenCookie($token) { alSetTokenCookie($token); }  // Note: overridden below với SameSite=Lax
-function clearTokenCookie() { alClearTokenCookie(); }
-function createToken($user) { return alCreateToken($user); }
-function verifyToken($token) { return alVerifyToken($token); }
-function authenticate() { return alAuthenticate(); }
-function jsonResponse($data, $code = 200) { alJsonResponse($data, $code); }
-function jsonInput() { return alJsonInput(); }
-function getClientIP() { return alGetClientIP(); }
-function rateLimit($key, $maxRequests, $windowSeconds, $errorMessage) {
-    return alRateLimit($key, $maxRequests, $windowSeconds, $errorMessage);
-}
-
-function requireRole($allowedRoles) {
-    $auth = alAuthenticate();
-    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
-    if (!in_array($auth['role'], $allowedRoles)) jsonResponse(['error' => 'Forbidden'], 403);
-    return $auth;
-}
-
-// ── User helpers (dùng chung với loadData/saveData từ auth.php) ──
-// Các hàm này dùng loadData('users') và saveData('users') định nghĩa ở auth.php
-function sanitizeUser($u) {
-    return [
-        'id' => $u['id'],
-        'email' => $u['email'],
-        'role' => $u['role'],
-        'fullName' => $u['fullName'],
-        'phone' => $u['phone'] ?? '',
-        'status' => $u['status'] ?? 'PENDING',
-        'courseId' => $u['courseId'] ?? '',
-        'rank' => $u['rank'] ?? '',
-        'agencyId' => $u['agencyId'] ?? '',
-        'address' => $u['address'] ?? '',
-        'notes' => $u['notes'] ?? '',
-        'createdAt' => $u['createdAt'] ?? '',
-    ];
-}
-
-function findUserByEmail($email) {
-    $users = loadData('users');
-    foreach ($users as $u) {
-        if (($u['status'] ?? '') === 'REJECTED') continue;
-        if (strtolower($u['email']) === strtolower($email) || ($u['phone'] ?? '') === $email) return $u;
-    }
-    return null;
-}
-
-function findUserById($id) {
-    $users = loadData('users');
-    foreach ($users as $u) { if ($u['id'] === $id) return $u; }
-    return null;
-}
+// Đã require auth-lib.php ở đầu file.
+// Các alias function (getTokenFromRequest, createToken, ...) đã được định nghĩa ở trên.
 
 // ── Router ──
 $method = $_SERVER['REQUEST_METHOD'];

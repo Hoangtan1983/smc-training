@@ -25,7 +25,11 @@ assets/
 backups/
 api_backup_*/
 
-# Database local
+# Debug tạm thời
+api/data/*.log
+api/data/fix-log.txt
+api/data/*.tmp.*
+api/data/auto_backups/
 api/data/smc_training.sqlite
 api/data/*.sqlite
 
