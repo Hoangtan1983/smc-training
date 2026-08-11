@@ -114,21 +114,21 @@ export function getUser(id) {
 }
 
 export function createUser(data) {
-  return apiCall('/api/auth.php?action=create', {
+  return apiCall('/api/auth.php?action=users', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
 export function updateUser(id, data) {
-  return apiCall(`/api/auth.php?action=update&id=${id}`, {
+  return apiCall(`/api/auth.php?action=users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
 export function deleteUser(id) {
-  return apiCall(`/api/auth.php?action=delete&id=${id}`, {
+  return apiCall(`/api/auth.php?action=users/${id}`, {
     method: 'DELETE',
   });
 }
