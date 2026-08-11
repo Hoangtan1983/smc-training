@@ -12,3 +12,28 @@ api/uploads/
 deploy-to-server/
 .env
 .env.local
+
+# Bảo mật: file chứa thông tin nhạy cảm
+deploy-now.sh
+*.sh
+*.bak
+*.mjs
+
+# Thư mục tạm/dư thừa
+public/
+assets/
+backups/
+api_backup_*/
+
+# Database local
+api/data/smc_training.sqlite
+api/data/*.sqlite
+
+# File debug tạm thời
+api/debug-*.php
+api/cleanup-*.php
+api/d.php
+api/deploy.php
+
+# Legacy files
+api/*.legacy
