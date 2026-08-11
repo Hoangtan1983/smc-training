@@ -7,14 +7,12 @@ import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 const TOPICS = [
-  { id: 'aerodynamics', name: 'Khí động học', icon: Wind, color: 'bg-blue-50 text-blue-600' },
-  { id: 'meteorology', name: 'Khí tượng', icon: Cloud, color: 'bg-cyan-50 text-cyan-600' },
-  { id: 'propulsion', name: 'Động cơ & Hệ thống', icon: Zap, color: 'bg-yellow-50 text-yellow-600' },
-  { id: 'flight', name: 'Kỹ thuật bay', icon: Plane, color: 'bg-smc-50 text-smc-600' },
-  { id: 'communication', name: 'Liên lạc VTĐ', icon: Radio, color: 'bg-green-50 text-green-600' },
-  { id: 'maintenance', name: 'Bảo dưỡng', icon: Wrench, color: 'bg-orange-50 text-orange-600' },
-  { id: 'regulations', name: 'Quy định pháp luật', icon: Brain, color: 'bg-purple-50 text-purple-600' },
-  { id: 'navigation', name: 'Dẫn đường', icon: BookOpen, color: 'bg-red-50 text-red-600' },
+  { id: 'Pháp luật UAV', name: 'Pháp luật & Quy định', icon: Brain, color: 'bg-purple-50 text-purple-600' },
+  { id: 'Khí tượng', name: 'Khí tượng', icon: Cloud, color: 'bg-cyan-50 text-cyan-600' },
+  { id: 'Nguyên lý bay', name: 'Nguyên lý bay', icon: Plane, color: 'bg-smc-50 text-smc-600' },
+  { id: 'Thiết bị UAV', name: 'Động cơ & Hệ thống', icon: Zap, color: 'bg-yellow-50 text-yellow-600' },
+  { id: 'Vận hành an toàn', name: 'Vận hành an toàn', icon: Wind, color: 'bg-blue-50 text-blue-600' },
+  { id: 'Xử lý tình huống', name: 'Xử lý tình huống', icon: Wrench, color: 'bg-orange-50 text-orange-600' },
 ];
 
 export default function StudentPractice() {
@@ -34,7 +32,9 @@ export default function StudentPractice() {
     setError(null);
     try {
       const res = await api.getQuestionBank();
-      setQuestionBank(res.data || res.questions || []);
+      // Câu hỏi có thể nằm trong res.questions (wrapped) hoặc trực tiếp trong res
+      const questions = res.questions || res.data || res || [];
+      setQuestionBank(Array.isArray(questions) ? questions : []);
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu.');
       toast.error('Không thể tải câu hỏi ôn luyện.');
@@ -99,9 +99,13 @@ export default function StudentPractice() {
   const calculateScore = () => {
     let correct = 0;
     quizQuestions.forEach((q, idx) => {
-      const answer = selectedAnswers[idx];
-      const correctAnswer = q.correct_answer || q.correctAnswer || q.answer;
-      if (answer === correctAnswer) correct++;
+      const userAnswer = selectedAnswers[idx];
+      // answer có thể là index (0,1,2,3) hoặc text đáp án
+      const answerField = q.correct_answer ?? q.correctAnswer ?? q.answer;
+      const correctAnswer = typeof answerField === 'number'
+        ? (q.options || [])[answerField]  // convert index → text
+        : answerField;                      // dùng trực tiếp text
+      if (userAnswer === correctAnswer) correct++;
     });
     return { correct, total: quizQuestions.length };
   };
@@ -191,7 +195,7 @@ export default function StudentPractice() {
             {quizQuestions[currentQuestion] && (
               <div className="space-y-4">
                 <p className="font-medium text-gray-900">
-                  {quizQuestions[currentQuestion].question || quizQuestions[currentQuestion].content || quizQuestions[currentQuestion].text}
+                  {quizQuestions[currentQuestion].question || quizQuestions[currentQuestion].q || quizQuestions[currentQuestion].content || quizQuestions[currentQuestion].text}
                 </p>
                 <div className="space-y-2">
                   {(quizQuestions[currentQuestion].options || []).map((opt, idx) => (

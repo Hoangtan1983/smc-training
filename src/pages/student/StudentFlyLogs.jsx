@@ -15,7 +15,8 @@ export default function StudentFlyLogs() {
     setError(null);
     try {
       const res = await api.getFlyLogs();
-      const data = res.data || res.flyLogs || [];
+      // API có thể trả về array trực tiếp hoặc wrapped trong data/flyLogs
+      const data = Array.isArray(res) ? res : (res.data || res.flyLogs || []);
       setFlyLogs(data);
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu.');
@@ -29,7 +30,9 @@ export default function StudentFlyLogs() {
     fetchData();
   }, [fetchData]);
 
-  const totalHours = flyLogs.reduce((sum, log) => sum + (Number(log.hours || log.flight_hours) || 0), 0);
+  // Tính giờ bay: dữ liệu lưu duration_minutes, đổi sang giờ
+  const totalMinutes = flyLogs.reduce((sum, log) => sum + (Number(log.duration_minutes || log.hours || log.flight_hours) || 0), 0);
+  const totalHours = (totalMinutes / 60).toFixed(1);
 
   const typeLabel = {
     training: 'Huấn luyện',
@@ -98,7 +101,9 @@ export default function StudentFlyLogs() {
                         {log.date || log.log_date || '-'}
                       </span>
                     </td>
-                    <td className="text-sm font-semibold">{log.hours || log.flight_hours || 0} giờ</td>
+                    <td className="text-sm font-semibold">
+                      {((Number(log.duration_minutes || log.hours || log.flight_hours) || 0) / 60).toFixed(1)} giờ
+                    </td>
                     <td>
                       <span className={`badge ${log.type === 'exam' ? 'badge-warning' : log.type === 'solo' ? 'badge-success' : 'badge-info'}`}>
                         {typeLabel[log.type || log.flight_type] || log.type || log.flight_type || '-'}

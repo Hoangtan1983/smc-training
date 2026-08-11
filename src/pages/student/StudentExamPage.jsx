@@ -79,14 +79,22 @@ export default function StudentExamPage() {
     setSubmitting(true);
     try {
       const questions = exam.questions || [];
-      const formattedAnswers = questions.map((q, idx) => ({
-        question_id: q.id,
-        question: q.question || q.content || q.text,
-        student_answer: answers[idx] || null,
-        correct_answer: q.correct_answer || q.correctAnswer || q.answer,
-        options: q.options || [],
-        max_score: q.point || q.max_score || q.maxScore || 1,
-      }));
+      const formattedAnswers = questions.map((q, idx) => {
+        // answer có thể là index (0,1,2,3) hoặc text
+        const answerField = q.correct_answer ?? q.correctAnswer ?? q.answer;
+        const correctAnswerText = typeof answerField === 'number'
+          ? (q.options || [])[answerField] || String(answerField)
+          : answerField || '';
+        return {
+          question_id: q.id,
+          question: q.question || q.q || q.content || q.text,
+          student_answer: answers[idx] || null,
+          correct_answer: correctAnswerText,
+          correct_answer_index: typeof answerField === 'number' ? answerField : (q.options || []).indexOf(answerField),
+          options: q.options || [],
+          max_score: q.point || q.max_score || q.maxScore || 1,
+        };
+      });
 
       const result = await api.submitExam({
         exam_id: examId,
@@ -189,7 +197,7 @@ export default function StudentExamPage() {
         <div className="card mb-6">
           <p className="text-sm text-gray-500 mb-2">Câu {currentQuestion + 1}</p>
           <p className="font-medium text-gray-900 mb-6">
-            {questions[currentQuestion].question || questions[currentQuestion].content || questions[currentQuestion].text}
+            {questions[currentQuestion].question || questions[currentQuestion].q || questions[currentQuestion].content || questions[currentQuestion].text}
           </p>
           <div className="space-y-3">
             {(questions[currentQuestion].options || []).map((opt, idx) => (

@@ -22,30 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Shared libraries (single source of truth) ──
-require_once __DIR__ . '/helpers.php';      // loadData, saveData, sanitizeUser, findUserByEmail, findUserById, genId, ...
-require_once __DIR__ . '/auth-lib.php';     // alGetToken, alCreateToken, alVerifyToken, alRequireRole, ...
-
-// ── Alias functions for backward compatibility ──
-// Tất cả code trong file này dùng tên hàm ngắn (không prefix al*)
-function getTokenFromRequest() { return alGetToken(); }
-function setTokenCookie($token) { alSetTokenCookie($token); }
-function clearTokenCookie() { alClearTokenCookie(); }
-function createToken($user) { return alCreateToken($user); }
-function verifyToken($token) { return alVerifyToken($token); }
-function authenticate() { return alAuthenticate(); }
-function jsonResponse($data, $code = 200) { alJsonResponse($data, $code); }
-function jsonInput() { return alJsonInput(); }
-function getClientIP() { return alGetClientIP(); }
-function rateLimit($key, $maxRequests, $windowSeconds, $errorMessage) {
-    return alRateLimit($key, $maxRequests, $windowSeconds, $errorMessage);
-}
-
-function requireRole($allowedRoles) {
-    $auth = alAuthenticate();
-    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
-    if (!in_array($auth['role'], $allowedRoles)) jsonResponse(['error' => 'Forbidden'], 403);
-    return $auth;
-}
+// helpers.php cung cấp: loadData, saveData, sanitizeUser, findUserByEmail, findUserById, genId,
+//   getTokenFromRequest, jsonInput, jsonResponse, createToken, verifyToken, authenticate,
+//   requireRole, rateLimit, getClientIP, setTokenCookie, clearTokenCookie
+// auth-lib.php cung cấp: alGetToken, alCreateToken, alVerifyToken, alRequireRole, alRateLimit, ...
+require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/auth-lib.php';
 
 // ── Legacy wrapper: gọi trực tiếp processPaymentInternal ──
 function processPaymentInternal($input, $auth) {
@@ -1700,6 +1682,17 @@ foreach ($dataRoutes as $route) {
         // STUDENT can GET classes (để xem lớp của mình)
         if ($route === 'classes' && $method === 'GET' && !($parts[$idIdx] ?? null)) {
             $pubGet = true;
+        }
+        // ── STUDENT: chỉ trả về dữ liệu của chính mình cho fly_logs, certifications, attendance ──
+        if (in_array($route, ['fly_logs', 'certifications', 'attendance']) && $method === 'GET' && !($parts[$idIdx] ?? null)) {
+            $auth = authenticate();
+            if ($auth && $auth['role'] === 'STUDENT') {
+                $items = loadData($route);
+                $filtered = array_values(array_filter($items, fn($item) =>
+                    ($item['student_id'] ?? $item['studentId'] ?? '') === $auth['id']
+                ));
+                jsonResponse($filtered);
+            }
         }
         handleCRUD($route, $roles, $pubGet);
     }

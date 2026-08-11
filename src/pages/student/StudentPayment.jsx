@@ -19,8 +19,9 @@ export default function StudentPayment() {
     setError(null);
     try {
       const res = await api.getMyTuition();
-      const data = res.data || res.tuition || res || {};
-      setTuition(data);
+      // API trả về: { success: true, tuition: { amount, paymentAmount, status, ... } }
+      const tuitionData = res.tuition || res.data || res || {};
+      setTuition(tuitionData);
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu.');
       toast.error('Không thể tải thông tin học phí.');
@@ -33,10 +34,10 @@ export default function StudentPayment() {
     fetchData();
   }, [fetchData]);
 
-  const totalAmount = tuition?.total_amount || tuition?.totalAmount || tuition?.total || 0;
-  const paidAmount = tuition?.paid_amount || tuition?.paidAmount || tuition?.paid || 0;
-  const remainingAmount = totalAmount - paidAmount;
-  const payments = tuition?.payments || tuition?.transactions || [];
+  const totalAmount = tuition?.amount || tuition?.totalAmount || tuition?.total || 0;
+  const paidAmount = tuition?.paymentAmount || tuition?.partialAmount || tuition?.paidAmount || tuition?.paid || 0;
+  const remainingAmount = Math.max(0, totalAmount - paidAmount);
+  const payments = tuition?.paymentHistory || tuition?.payments || tuition?.transactions || [];
   const schedule = tuition?.schedule || tuition?.payment_schedule || tuition?.paymentSchedule || [];
 
   const getPaymentStatusBadge = (p) => {

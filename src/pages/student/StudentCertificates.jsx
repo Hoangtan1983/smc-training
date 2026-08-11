@@ -19,7 +19,8 @@ export default function StudentCertificates() {
         api.getCertifications(),
         api.getMyEnrollments(),
       ]);
-      setCertificates(certRes.data || certRes.certifications || certRes.certificates || []);
+      const certs = Array.isArray(certRes) ? certRes : (certRes.data || certRes.certifications || certRes.certificates || []);
+      setCertificates(certs);
       setEnrollments(enrRes.data || enrRes.enrollments || []);
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu.');
