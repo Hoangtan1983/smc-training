@@ -27,8 +27,9 @@ async function apiCall(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Fix: Đảm bảo endpoint luôn bắt đầu bằng /
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  // Fix: loại bỏ /api prefix nếu có vì BASE_URL đã có /api
+  let cleanEndpoint = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
+  if (!cleanEndpoint.startsWith('/')) cleanEndpoint = '/' + cleanEndpoint;
   const url = `${BASE_URL}${cleanEndpoint}`;
 
   try {

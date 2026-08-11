@@ -22,13 +22,15 @@ export default function AdminAgencies() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getAgencies();
-      // API trả về array trực tiếp (không wrap trong {data} hay {agencies})
-      const list = Array.isArray(res) ? res : (res.data || res.agencies || []);
+      // Sử dụng apiGetAgencies vì Vite đang serve phiên bản API cũ
+      // Thử cả 2 tên hàm: getAgencies và apiGetAgencies (tùy phiên bản Vite cache)
+      const fn = api.getAgencies || api.apiGetAgencies;
+      const res = await fn();
+      const list = Array.isArray(res) ? res : (res?.data || res?.agencies || []);
       setAgencies(list);
     } catch (err) {
+      console.error('AdminAgencies error:', err);
       setError(err.message || 'Không thể tải danh sách đại lý.');
-      toast.error('Không thể tải danh sách đại lý.');
     } finally {
       setLoading(false);
     }
@@ -120,7 +122,7 @@ export default function AdminAgencies() {
   return (
     <div className="page-container">
       <PageHeader
-        title="Quản lý đại lý"
+        title="Quản lý Đại lý"
         subtitle="Quản lý các đại lý tuyển sinh và hoa hồng"
         action={
           <button onClick={openCreateModal} className="btn-primary">
