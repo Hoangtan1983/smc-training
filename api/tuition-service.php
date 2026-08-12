@@ -201,6 +201,15 @@ function tsSyncEnrollment($studentId, $courseId, $courseName, $confirmedBy, $tot
                 'date' => $now,
                 'confirmed_by' => $confirmedBy,
             ];
+            // Preserve approval tracking fields (không ghi đè nếu đã có)
+            if (!isset($enr['approval_step'])) $enr['approval_step'] = 'none';
+            if (!isset($enr['approval_staff_by'])) $enr['approval_staff_by'] = null;
+            if (!isset($enr['approval_staff_name'])) $enr['approval_staff_name'] = null;
+            if (!isset($enr['approval_accountant_by'])) $enr['approval_accountant_by'] = null;
+            if (!isset($enr['approval_accountant_name'])) $enr['approval_accountant_name'] = null;
+            if (!isset($enr['approval_admin_by'])) $enr['approval_admin_by'] = null;
+            if (!isset($enr['approval_admin_name'])) $enr['approval_admin_name'] = null;
+
             $enr['status'] = 'active';
             $enr['confirmed_by'] = $confirmedBy;
             $enr['confirmed_at'] = $now;
@@ -241,6 +250,11 @@ function tsSyncEnrollment($studentId, $courseId, $courseName, $confirmedBy, $tot
                 'exam' => ['status' => 'pending'],
                 'certification' => ['status' => 'pending'],
             ],
+            // Approval tracking fields
+            'approval_step' => 'none',
+            'approval_staff_by' => null, 'approval_staff_name' => null, 'approval_staff_at' => null, 'approval_staff_note' => null,
+            'approval_accountant_by' => null, 'approval_accountant_name' => null, 'approval_accountant_at' => null, 'approval_accountant_note' => null,
+            'approval_admin_by' => null, 'approval_admin_name' => null, 'approval_admin_at' => null, 'approval_admin_note' => null,
         ];
     }
     tsSave('enrollments', $enrollments);
@@ -732,24 +746,27 @@ if ($tsAction === 'confirm-receipt') {
     $txn = $transactions[$txnIdx];
     if ($txn['status'] === 'confirmed') tsJson(['error' => 'Giao dịch đã được xác nhận trước đó'], 400);
     if ($txn['status'] === 'rejected') tsJson(['error' => 'Giao dịch đã bị từ chối'], 400);
-    if ($txn['status'] === 'accountant_confirmed') tsJson(['error' => 'Giao dịch đã được Kế toán duyệt — cần Admin duyệt cuối'], 400);
-    // v5: Cho phép duyệt pending (chuyển khoản) và staff_confirmed (tiền mặt)
-    if (!in_array($txn['status'], ['pending', 'staff_confirmed'])) {
-        tsJson(['error' => 'Giao dịch không ở trạng thái có thể duyệt (hiện tại: ' . $txn['status'] . ')'], 400);
-    }
 
     $now = date('c');
     $role = strtolower($auth['role'] ?? '');
 
     // v5: Phân biệt Accountant vs Admin
     if ($role === 'admin') {
-        // Admin → duyệt thẳng thành confirmed + kích hoạt
+        // Admin có thể duyệt từ staff_confirmed/pending/accountant_confirmed → confirmed
+        if (!in_array($txn['status'], ['pending', 'staff_confirmed', 'accountant_confirmed'])) {
+            tsJson(['error' => 'Giao dịch không ở trạng thái có thể duyệt (hiện tại: ' . $txn['status'] . ')'], 400);
+        }
         $newStatus = 'confirmed';
         $newApprovalLevel = 'admin_direct';
-    } else {
-        // Accountant → accountant_confirmed, CHƯA kích hoạt (chờ Admin duyệt cuối)
+    } elseif ($role === 'accountant') {
+        // Accountant chỉ duyệt được pending và staff_confirmed → accountant_confirmed
+        if (!in_array($txn['status'], ['pending', 'staff_confirmed'])) {
+            tsJson(['error' => 'Giao dịch không ở trạng thái có thể duyệt cho Kế toán (hiện tại: ' . $txn['status'] . ')'], 400);
+        }
         $newStatus = 'accountant_confirmed';
         $newApprovalLevel = 'accountant';
+    } else {
+        tsJson(['error' => 'Bạn không có quyền duyệt giao dịch này'], 403);
     }
 
     // Update transaction
@@ -951,6 +968,141 @@ if ($tsAction === 'admin-final-approve') {
             'invoice' => $invoice,
             'studentActivated' => true,
         ],
+    ]);
+}
+
+// =====================================================================
+// ACTION: enrollment-approve (v2 — Luồng duyệt 3 bước: NV → KT → Admin)
+// Phê duyệt enrollment theo từng bước
+//
+// POST Body: { enrollmentId*, step: "staff"|"accountant"|"admin", note? }
+// =====================================================================
+if ($tsAction === 'enrollment-approve') {
+    $auth = tsAuth();
+    if (!$auth) tsJson(['error' => 'Unauthorized'], 401);
+    if ($tsMethod !== 'POST') tsJson(['error' => 'POST required'], 405);
+
+    $input = tsInput();
+    $enrollmentId = $input['enrollmentId'] ?? '';
+    $step = $input['step'] ?? '';
+    $note = $input['note'] ?? '';
+
+    if (!$enrollmentId) tsJson(['error' => 'Thiếu enrollmentId'], 400);
+    if (!in_array($step, ['staff', 'accountant', 'admin'])) tsJson(['error' => 'Bước duyệt không hợp lệ (staff/accountant/admin)'], 400);
+
+    // Phân quyền
+    $role = strtolower($auth['role'] ?? '');
+    if ($step === 'staff' && !in_array($role, ['admin', 'staff'])) tsJson(['error' => 'Chỉ Nhân viên hoặc Admin mới được duyệt bước này'], 403);
+    if ($step === 'accountant' && !in_array($role, ['admin', 'accountant'])) tsJson(['error' => 'Chỉ Kế toán hoặc Admin mới được duyệt bước này'], 403);
+    if ($step === 'admin' && $role !== 'admin') tsJson(['error' => 'Chỉ Admin mới được duyệt kích hoạt'], 403);
+
+    $enrollments = tsLoad('enrollments');
+    $enrIdx = null;
+    foreach ($enrollments as $i => $enr) {
+        if (($enr['id'] ?? '') === $enrollmentId) { $enrIdx = $i; break; }
+    }
+    if ($enrIdx === null) tsJson(['error' => 'Không tìm thấy enrollment'], 404);
+
+    $enr = $enrollments[$enrIdx];
+    $now = date('c');
+    $approverName = $auth['fullName'] ?? ($auth['email'] ?? 'Unknown');
+    $currentStep = $enr['approval_step'] ?? 'none';
+
+    // Kiểm tra thứ tự duyệt
+    $requiredPrev = ['staff' => 'none', 'accountant' => 'staff', 'admin' => 'accountant'];
+    $expectedPrev = $requiredPrev[$step] ?? null;
+    if ($expectedPrev && $currentStep !== $expectedPrev) {
+        if ($currentStep === 'active') tsJson(['error' => 'Enrollment này đã được kích hoạt rồi'], 400);
+        if ($currentStep === 'rejected') tsJson(['error' => 'Enrollment này đã bị từ chối'], 400);
+        $stepLabels = ['none' => 'chưa duyệt', 'staff' => 'Nhân viên đã duyệt', 'accountant' => 'Kế toán đã duyệt'];
+        tsJson(['error' => 'Không đúng thứ tự duyệt. Hiện tại: ' . ($stepLabels[$currentStep] ?? $currentStep)], 400);
+    }
+
+    $noteText = $note ?: ('Duyệt bởi ' . $approverName);
+
+    if ($step === 'staff') {
+        $enrollments[$enrIdx]['approval_staff_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_staff_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_staff_at'] = $now;
+        $enrollments[$enrIdx]['approval_staff_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'staff';
+        $message = 'Đã duyệt bởi Nhân viên ' . $approverName . '. Chuyển cho Kế toán.';
+    } elseif ($step === 'accountant') {
+        $enrollments[$enrIdx]['approval_accountant_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_accountant_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_accountant_at'] = $now;
+        $enrollments[$enrIdx]['approval_accountant_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'accountant';
+        $message = 'Đã duyệt hóa đơn bởi Kế toán ' . $approverName . '. Chuyển cho Admin kích hoạt.';
+    } elseif ($step === 'admin') {
+        $enrollments[$enrIdx]['approval_admin_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_admin_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_admin_at'] = $now;
+        $enrollments[$enrIdx]['approval_admin_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'active';
+        $enrollments[$enrIdx]['enrollment_status'] = 'active';
+        $enrollments[$enrIdx]['status'] = 'active';
+
+        // KÍCH HOẠT tài khoản học viên
+        tsSyncStudentStatus($enr['student_id'], $auth['id']);
+        $message = 'Đã kích hoạt khóa học bởi Admin ' . $approverName . '. Tài khoản học viên đã ACTIVE.';
+    }
+    $enrollments[$enrIdx]['updated_at'] = $now;
+    tsSave('enrollments', $enrollments);
+
+    tsJson([
+        'success' => true,
+        'message' => $message,
+        'data' => [
+            'enrollment' => $enrollments[$enrIdx],
+            'approval_step' => $enrollments[$enrIdx]['approval_step'],
+            'approved_by' => $approverName,
+            'approved_at' => $now,
+        ],
+    ]);
+}
+
+// =====================================================================
+// ACTION: list-enrollments
+// Liệt kê enrollments với filter approval_step
+// GET ?approval_step=none|staff|accountant|active|rejected
+// =====================================================================
+if ($tsAction === 'list-enrollments') {
+    $auth = tsAuth();
+    if (!$auth) tsJson(['error' => 'Unauthorized'], 401);
+
+    $enrollments = tsLoad('enrollments');
+    $approvalStep = $_GET['approval_step'] ?? null;
+
+    // Đảm bảo mọi enrollment có approval_step (khởi tạo nếu thiếu)
+    $migrated = false;
+    foreach ($enrollments as $i => &$enr) {
+        if (!isset($enr['approval_step'])) {
+            $enr['approval_step'] = ($enr['status'] ?? '') === 'active' ? 'active' : 'none';
+            $enr['approval_staff_by'] = $enr['approval_staff_by'] ?? null;
+            $enr['approval_staff_name'] = $enr['approval_staff_name'] ?? null;
+            $enr['approval_staff_at'] = $enr['approval_staff_at'] ?? null;
+            $enr['approval_accountant_by'] = $enr['approval_accountant_by'] ?? null;
+            $enr['approval_accountant_name'] = $enr['approval_accountant_name'] ?? null;
+            $enr['approval_accountant_at'] = $enr['approval_accountant_at'] ?? null;
+            $enr['approval_admin_by'] = $enr['approval_admin_by'] ?? null;
+            $enr['approval_admin_name'] = $enr['approval_admin_name'] ?? null;
+            $enr['approval_admin_at'] = $enr['approval_admin_at'] ?? null;
+            $migrated = true;
+        }
+    }
+    unset($enr);
+    if ($migrated) tsSave('enrollments', $enrollments);
+
+    // Filter
+    if ($approvalStep) {
+        $enrollments = array_values(array_filter($enrollments, fn($e) => ($e['approval_step'] ?? '') === $approvalStep));
+    }
+
+    tsJson([
+        'success' => true,
+        'data' => $enrollments,
+        'total' => count($enrollments),
     ]);
 }
 
@@ -2843,5 +2995,151 @@ if ($tsAction === 'fix-non-agency-discounts') {
         'success' => true,
         'message' => "Đã sửa {$fixed} invoice không agency bị gán sai discount.",
         'fixed' => $fixed,
+    ]);
+}
+
+// =====================================================================
+// JSON FALLBACK: Accountant Cash Ledger (đọc từ JSON khi MySQL chưa sẵn sàng)
+// GET /api/tuition-service.php?action=cash-ledger-json
+// =====================================================================
+if ($tsAction === 'cash-ledger-json') {
+    $auth = tsRequireAccountant();
+
+    $staffId = $_GET['staffId'] ?? '';
+    $dateFrom = $_GET['dateFrom'] ?? date('Y-m-01');
+    $dateTo = $_GET['dateTo'] ?? date('Y-m-t');
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $perPage = min(100, max(1, (int)($_GET['perPage'] ?? 50)));
+
+    $transactions = tsLoad('transactions');
+    $users = tsLoad('users');
+    // Handle users.json format: có thể là {"users": [...]} hoặc [...]
+    if (isset($users['users']) && is_array($users['users'])) {
+        $users = $users['users'];
+    }
+    $invoices = tsLoad('invoices');
+
+    // Build user lookup
+    $userById = [];
+    foreach ($users as $u) {
+        $uid = $u['id'] ?? '';
+        if ($uid) $userById[$uid] = $u;
+    }
+
+    // Build invoice lookup by studentId
+    $invoiceByStudent = [];
+    foreach ($invoices as $inv) {
+        $sid = $inv['studentId'] ?? '';
+        if ($sid && !isset($invoiceByStudent[$sid])) {
+            $invoiceByStudent[$sid] = $inv;
+        }
+    }
+
+    // Build entries from transactions
+    $allEntries = [];
+    $staffHoldingsMap = [];
+
+    foreach ($transactions as $txn) {
+        $createdAt = $txn['createdAt'] ?? '';
+        $txnDate = substr($createdAt, 0, 10);
+        if ($txnDate < $dateFrom || $txnDate > $dateTo) continue;
+
+        $submittedBy = $txn['submittedBy'] ?? '';
+        $staffUser = $userById[$submittedBy] ?? null;
+        $staffName = $staffUser['fullName'] ?? $staffUser['email'] ?? $txn['submittedByName'] ?? 'Unknown';
+
+        if ($staffId && $submittedBy !== $staffId) continue;
+
+        $studentId = $txn['studentId'] ?? '';
+        $studentUser = $userById[$studentId] ?? null;
+        $studentName = $studentUser['fullName'] ?? $studentId;
+
+        $invoice = $invoiceByStudent[$studentId] ?? null;
+        $agencyName = $txn['agencyName'] ?? $invoice['agencyName'] ?? '';
+
+        $txnStatus = $txn['status'] ?? 'pending';
+        $cashStatus = ($txnStatus === 'staff_confirmed' || $txnStatus === 'pending')
+            ? 'holding' : 'reconciled';
+
+        $amount = (int)($txn['amount'] ?? 0);
+
+        $allEntries[] = [
+            'id' => $txn['id'] ?? '',
+            'staff_id' => $submittedBy,
+            'staff_name' => $staffName,
+            'student_name' => $studentName,
+            'receipt_code' => $txn['receipt_code'] ?? ('TXN-' . ($txn['id'] ?? '')),
+            'payment_id' => $txn['id'] ?? '',
+            'amount' => $amount,
+            'status' => $cashStatus,
+            'payment_status' => $txnStatus,
+            'agency_name' => $agencyName,
+            'created_at' => $createdAt,
+            'course_name' => $invoice['courseName'] ?? '',
+        ];
+
+        // Aggregate staff holdings
+        if ($cashStatus === 'holding') {
+            if (!isset($staffHoldingsMap[$submittedBy])) {
+                $staffHoldingsMap[$submittedBy] = [
+                    'staff_id' => $submittedBy,
+                    'staff_name' => $staffName,
+                    'staff_phone' => $staffUser['phone'] ?? '',
+                    'pending_count' => 0,
+                    'total_holding' => 0,
+                    'oldest_held_since' => $createdAt,
+                    'hours_held' => 0,
+                ];
+            }
+            $sh = &$staffHoldingsMap[$submittedBy];
+            $sh['pending_count']++;
+            $sh['total_holding'] += $amount;
+            if ($createdAt < $sh['oldest_held_since']) {
+                $sh['oldest_held_since'] = $createdAt;
+            }
+        }
+    }
+
+    // Calculate hours_held for each staff
+    $now = time();
+    foreach ($staffHoldingsMap as &$sh) {
+        $oldest = strtotime($sh['oldest_held_since']);
+        $sh['hours_held'] = $oldest ? round(($now - $oldest) / 3600, 1) : 0;
+    }
+    unset($sh);
+
+    $staffHoldings = array_values($staffHoldingsMap);
+
+    // Sort entries by date desc
+    usort($allEntries, function($a, $b) {
+        return strcmp($b['created_at'] ?? '', $a['created_at'] ?? '');
+    });
+
+    $total = count($allEntries);
+    $offset = ($page - 1) * $perPage;
+    $pagedEntries = array_slice($allEntries, $offset, $perPage);
+
+    // Overview calculations
+    $unremittedCash = 0;
+    $reconciledCash = 0;
+    foreach ($allEntries as $e) {
+        if ($e['status'] === 'holding') $unremittedCash += $e['amount'];
+        else $reconciledCash += $e['amount'];
+    }
+
+    tsJson([
+        'success' => true,
+        'data' => $pagedEntries,
+        'overview' => [
+            'activeStaffCount' => count($staffHoldings),
+            'unremittedCash' => $unremittedCash,
+            'unremittedCashFmt' => number_format($unremittedCash) . ' ₫',
+            'reconciledCash' => $reconciledCash,
+            'reconciledCashFmt' => number_format($reconciledCash) . ' ₫',
+        ],
+        'staffHoldings' => $staffHoldings,
+        'total' => $total,
+        'page' => $page,
+        'perPage' => $perPage,
     ]);
 }

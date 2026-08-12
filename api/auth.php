@@ -739,7 +739,7 @@ function sanitizeUser($u) {
         'role' => $u['role'],
         'fullName' => $u['fullName'],
         'phone' => $u['phone'] ?? '',
-        'status' => $u['status'] ?? 'PENDING',
+        'status' => strtoupper($u['status'] ?? 'PENDING'),
         'courseId' => $u['courseId'] ?? '',
         'rank' => $u['rank'] ?? '',
         'agencyId' => $u['agencyId'] ?? '',
@@ -1137,7 +1137,11 @@ if (($parts[0] ?? '') === 'users' || (($parts[0] ?? '') === 'auth' && ($parts[1]
                     if (isset($input['notes'])) $u['notes'] = $input['notes'];
                     if (!empty($input['password'])) $u['password'] = password_hash($input['password'], PASSWORD_BCRYPT);
                 }
-                $found = true; saveData('users', $users); jsonResponse(['user' => sanitizeUser($u)]); break;
+                $found = true;
+                if (!saveData('users', $users)) {
+                    jsonResponse(['error' => 'Lỗi hệ thống: Không thể lưu dữ liệu. Vui lòng thử lại.'], 500);
+                }
+                jsonResponse(['user' => sanitizeUser($u)]); break;
             }
         } unset($u);
         if (!$found) jsonResponse(['error' => 'Không tìm thấy người dùng'], 404);
@@ -1587,13 +1591,14 @@ if (($parts[0] ?? '') === 'update-stage') {
     ]);
 }
 
-// ── Approve student registration (DEPRECATED — wrapper gọi processPaymentInternal) ──
+// ── Approve student registration (v2 — Luồng 3 bước: NV → KT → Admin) ──
+// Bước 1: Nhân viên duyệt → ghi tên NV, chuyển cho Kế toán
 if (($parts[0] ?? '') === 'approve-student') {
     $auth = requireRole(['ADMIN', 'STAFF']);
     $userId = $parts[1] ?? null;
     if (!$userId) jsonResponse(['error' => 'Thiếu ID học viên'], 400);
 
-    // Kiểm tra student hợp lệ trước khi gọi processPaymentInternal
+    // Kiểm tra student hợp lệ
     $users = loadData('users');
     $student = null;
     foreach ($users as $u) { if ($u['id'] === $userId) { $student = $u; break; } }
@@ -1601,41 +1606,210 @@ if (($parts[0] ?? '') === 'approve-student') {
     if ($student['role'] !== 'STUDENT') jsonResponse(['error' => 'Người dùng không phải học viên'], 400);
     if ($student['status'] === 'ACTIVE') jsonResponse(['error' => 'Tài khoản đã được duyệt trước đó'], 400);
 
-    // Lấy coursePrice từ khóa học của học viên
-    $courses = loadData('courses');
-    $coursePrice = 0;
-    $studentCourseId = $student['courseId'] ?? '';
-    if ($studentCourseId) {
-        foreach ($courses as $c) {
-            if ($c['id'] === $studentCourseId) {
-                $coursePrice = (int)($c['price'] ?? 0);
-                break;
-            }
-        }
+    $now = date('c');
+    $approverName = $auth['fullName'] ?? ($auth['email'] ?? 'Nhân viên SMC');
+    $input = jsonInput();
+    $note = $input['note'] ?? ('Duyệt bởi ' . $approverName);
+
+    // Tìm hoặc tạo enrollment cho student
+    $enrollments = loadData('enrollments');
+    $enrIdx = null;
+    foreach ($enrollments as $i => $enr) {
+        if (($enr['student_id'] ?? '') === $userId) { $enrIdx = $i; break; }
     }
 
-    // Gọi unified endpoint với activationThreshold=0 (kích hoạt vô điều kiện, tương thích cũ)
-    // LƯU Ý: paidAmount=0 sẽ KHÔNG tạo transaction (tránh giao dịch rỗng amount=0)
-    $result = processPaymentInternal([
-        'studentId' => $userId,
-        'totalAmount' => $coursePrice,  // dùng giá khóa học làm totalAmount
-        'paidAmount' => 0,                          // không tạo transaction nếu = 0
-        'paymentMethod' => 'cash',
-        'note' => 'Duyệt không thu phí (approve-student)',
-        'activationThreshold' => 0,
-        'exempt' => true,                           // cho phép amount=0 (duyệt miễn phí)
-    ], $auth);
-
-    if (isset($result['error'])) {
-        jsonResponse($result, $result['code'] ?? 500);
+    if ($enrIdx === null) {
+        // Tạo enrollment mới nếu chưa có
+        $enrId = 'enr-' . bin2hex(random_bytes(8));
+        $enrollment = [
+            'id' => $enrId,
+            'enrollment_code' => 'HS-' . date('Y') . '-' . str_pad(count($enrollments) + 1, 4, '0', STR_PAD_LEFT),
+            'student_id' => $userId,
+            'studentName' => $student['fullName'] ?? '',
+            'course_id' => $student['courseId'] ?? '',
+            'courseName' => '',
+            'total_amount' => 0,
+            'paid_amount' => 0,
+            'remaining_amount' => 0,
+            'payment_status' => 'pending',
+            'enrollment_status' => 'pending',
+            'status' => 'pending',
+            'approval_staff_by' => $auth['id'],
+            'approval_staff_name' => $approverName,
+            'approval_staff_at' => $now,
+            'approval_staff_note' => $note,
+            'approval_accountant_by' => null,
+            'approval_accountant_name' => null,
+            'approval_accountant_at' => null,
+            'approval_accountant_note' => null,
+            'approval_admin_by' => null,
+            'approval_admin_name' => null,
+            'approval_admin_at' => null,
+            'approval_admin_note' => null,
+            'approval_step' => 'staff',
+            'notes' => 'Tạo bởi approve-student — ' . $note,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        $enrollments[] = $enrollment;
+    } else {
+        // Cập nhật enrollment hiện có → staff approved
+        $enrollments[$enrIdx]['approval_staff_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_staff_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_staff_at'] = $now;
+        $enrollments[$enrIdx]['approval_staff_note'] = $note;
+        $enrollments[$enrIdx]['approval_step'] = 'staff';
+        $enrollments[$enrIdx]['updated_at'] = $now;
+        $enrollment = $enrollments[$enrIdx];
     }
+    saveData('enrollments', $enrollments);
 
     jsonResponse([
         'success' => true,
-        'message' => 'Đã duyệt tài khoản học viên',
-        'enrollment_created' => !($result['enrollment']['created'] ?? true),
-        'email_sent' => $result['email']['sent'] ?? false,
-        'email_error' => $result['email']['error'] ?? null,
+        'message' => 'Đã duyệt tài khoản bởi ' . $approverName . '. Chuyển cho Kế toán đối soát hóa đơn.',
+        'data' => [
+            'enrollment' => $enrollment,
+            'approval_step' => 'staff',
+            'approved_by' => $approverName,
+        ],
+    ]);
+}
+
+// ── Phê duyệt Enrollment 3 bước (NV → Kế toán → Admin) ──
+// POST /api/auth.php?action=approve-enrollment
+// Body: { enrollmentId*, step: "staff"|"accountant"|"admin", note? }
+if (($parts[0] ?? '') === 'approve-enrollment') {
+    $auth = authenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+    $input = jsonInput();
+
+    $enrollmentId = $input['enrollmentId'] ?? '';
+    $step = $input['step'] ?? '';
+    $note = $input['note'] ?? '';
+
+    if (!$enrollmentId) jsonResponse(['error' => 'Thiếu enrollmentId'], 400);
+    if (!in_array($step, ['staff', 'accountant', 'admin'])) jsonResponse(['error' => 'Bước duyệt không hợp lệ (staff/accountant/admin)'], 400);
+
+    // Phân quyền theo step
+    $role = $auth['role'] ?? '';
+    if ($step === 'staff' && !in_array($role, ['ADMIN', 'STAFF'])) jsonResponse(['error' => 'Chỉ Nhân viên hoặc Admin mới được duyệt bước này'], 403);
+    if ($step === 'accountant' && !in_array($role, ['ADMIN', 'ACCOUNTANT'])) jsonResponse(['error' => 'Chỉ Kế toán hoặc Admin mới được duyệt bước này'], 403);
+    if ($step === 'admin' && $role !== 'ADMIN') jsonResponse(['error' => 'Chỉ Admin mới được duyệt kích hoạt'], 403);
+
+    // Tìm enrollment
+    $enrollments = loadData('enrollments');
+    $enrIdx = null;
+    foreach ($enrollments as $i => $enr) {
+        if (($enr['id'] ?? '') === $enrollmentId) { $enrIdx = $i; break; }
+    }
+    if ($enrIdx === null) jsonResponse(['error' => 'Không tìm thấy enrollment'], 404);
+
+    $enr = $enrollments[$enrIdx];
+    $now = date('c');
+    $approverName = $auth['fullName'] ?? ($auth['email'] ?? 'Unknown');
+    $currentStep = $enr['approval_step'] ?? 'none';
+
+    // Kiểm tra thứ tự duyệt
+    $stepOrder = ['none' => 0, 'staff' => 1, 'accountant' => 2, 'active' => 99, 'rejected' => -1];
+    $requiredPrevStep = ['staff' => 'none', 'accountant' => 'staff', 'admin' => 'accountant'];
+    $expectedPrev = $requiredPrevStep[$step] ?? null;
+
+    if ($expectedPrev && $currentStep !== $expectedPrev) {
+        if ($currentStep === 'active') jsonResponse(['error' => 'Enrollment này đã được kích hoạt rồi'], 400);
+        if ($currentStep === 'rejected') jsonResponse(['error' => 'Enrollment này đã bị từ chối'], 400);
+        $stepLabels = ['none' => 'chưa duyệt', 'staff' => 'Nhân viên đã duyệt', 'accountant' => 'Kế toán đã duyệt'];
+        jsonResponse(['error' => 'Không đúng thứ tự duyệt. Hiện tại: ' . ($stepLabels[$currentStep] ?? $currentStep) . '. Cần: ' . ($stepLabels[$expectedPrev] ?? $expectedPrev)], 400);
+    }
+
+    // Cập nhật approval fields theo step
+    $noteText = $note ?: ('Duyệt bởi ' . $approverName);
+    if ($step === 'staff') {
+        $enrollments[$enrIdx]['approval_staff_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_staff_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_staff_at'] = $now;
+        $enrollments[$enrIdx]['approval_staff_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'staff';
+        $message = 'Đã duyệt bởi Nhân viên ' . $approverName . '. Chuyển cho Kế toán.';
+    } elseif ($step === 'accountant') {
+        $enrollments[$enrIdx]['approval_accountant_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_accountant_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_accountant_at'] = $now;
+        $enrollments[$enrIdx]['approval_accountant_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'accountant';
+        $message = 'Đã duyệt hóa đơn bởi Kế toán ' . $approverName . '. Chuyển cho Admin kích hoạt.';
+    } elseif ($step === 'admin') {
+        $enrollments[$enrIdx]['approval_admin_by'] = $auth['id'];
+        $enrollments[$enrIdx]['approval_admin_name'] = $approverName;
+        $enrollments[$enrIdx]['approval_admin_at'] = $now;
+        $enrollments[$enrIdx]['approval_admin_note'] = $noteText;
+        $enrollments[$enrIdx]['approval_step'] = 'active';
+        $enrollments[$enrIdx]['enrollment_status'] = 'active';
+        $enrollments[$enrIdx]['status'] = 'active';
+
+        // KÍCH HOẠT tài khoản học viên
+        $users = loadData('users');
+        foreach ($users as &$u) {
+            if ($u['id'] === $enr['student_id']) {
+                $u['status'] = 'ACTIVE';
+                $u['notes'] = ($u['notes'] ?? '') . ' | Kích hoạt bởi Admin ' . $approverName . ' ngày ' . date('d/m/Y');
+                break;
+            }
+        }
+        unset($u);
+        saveData('users', $users);
+        $message = 'Đã kích hoạt khóa học bởi Admin ' . $approverName . '. Tài khoản học viên đã ACTIVE.';
+    }
+    $enrollments[$enrIdx]['updated_at'] = $now;
+    $enrollment = $enrollments[$enrIdx];
+    saveData('enrollments', $enrollments);
+
+    jsonResponse([
+        'success' => true,
+        'message' => $message,
+        'data' => [
+            'enrollment' => $enrollment,
+            'approval_step' => $enrollment['approval_step'],
+            'approved_by' => $approverName,
+            'approved_at' => $now,
+        ],
+    ]);
+}
+
+// ── Từ chối enrollment ──
+// POST /api/auth.php?action=reject-enrollment
+// Body: { enrollmentId*, reason? }
+if (($parts[0] ?? '') === 'reject-enrollment') {
+    $auth = requireRole(['ADMIN', 'STAFF', 'ACCOUNTANT']);
+    $input = jsonInput();
+    $enrollmentId = $input['enrollmentId'] ?? '';
+    $reason = $input['reason'] ?? 'Không có lý do';
+
+    if (!$enrollmentId) jsonResponse(['error' => 'Thiếu enrollmentId'], 400);
+
+    $enrollments = loadData('enrollments');
+    $enrIdx = null;
+    foreach ($enrollments as $i => $enr) {
+        if (($enr['id'] ?? '') === $enrollmentId) { $enrIdx = $i; break; }
+    }
+    if ($enrIdx === null) jsonResponse(['error' => 'Không tìm thấy enrollment'], 404);
+
+    $now = date('c');
+    $rejectorName = $auth['fullName'] ?? ($auth['email'] ?? 'Unknown');
+    $enrollments[$enrIdx]['approval_step'] = 'rejected';
+    $enrollments[$enrIdx]['enrollment_status'] = 'rejected';
+    $enrollments[$enrIdx]['status'] = 'rejected';
+    $enrollments[$enrIdx]['rejected_by'] = $auth['id'];
+    $enrollments[$enrIdx]['rejected_by_name'] = $rejectorName;
+    $enrollments[$enrIdx]['rejected_at'] = $now;
+    $enrollments[$enrIdx]['rejected_reason'] = $reason;
+    $enrollments[$enrIdx]['updated_at'] = $now;
+    $enrollment = $enrollments[$enrIdx];
+    saveData('enrollments', $enrollments);
+
+    jsonResponse([
+        'success' => true,
+        'message' => 'Đã từ chối enrollment bởi ' . $rejectorName,
+        'data' => ['enrollment' => $enrollment],
     ]);
 }
 
@@ -1688,7 +1862,7 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
             'courses' => ['name', 'price', 'description', 'duration', 'minFlyHours', 'category', 'status', 'syllabus'],
             'classes' => ['name', 'courseId', 'teacherId', 'student_ids', 'schedule', 'room', 'status', 'startDate', 'endDate'],
             'agencies' => ['name', 'code', 'contactPerson', 'phone', 'email', 'address', 'discountPercent', 'status', 'note'],
-            'agents' => ['name', 'code', 'contact_person', 'phone', 'email', 'password', 'commission_rate', 'status', 'address', 'tax_code', 'subjectType', 'allowedCourses', 'notes', 'userId'],
+            'transactions' => ['studentId', 'invoiceId', 'amount', 'method', 'status', 'note', 'agencyId', 'agencyName', 'receiptImage'],
             'enrollments' => ['student_id', 'course_id', 'course_name', 'status', 'payment_status', 'stage', 'teacher_id', 'notes'],
         ];
         $whitelist = $allowedFields[$collection] ?? null;
@@ -1713,6 +1887,7 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
             'courses' => ['name', 'price', 'description', 'duration', 'minFlyHours', 'category', 'status', 'syllabus'],
             'classes' => ['name', 'courseId', 'teacherId', 'student_ids', 'schedule', 'room', 'status', 'startDate', 'endDate'],
             'agencies' => ['name', 'code', 'contactPerson', 'phone', 'email', 'address', 'discountPercent', 'status', 'note'],
+            'transactions' => ['studentId', 'invoiceId', 'amount', 'method', 'status', 'note', 'agencyId', 'agencyName', 'receiptImage'],
             'enrollments' => ['student_id', 'course_id', 'course_name', 'status', 'payment_status', 'stage', 'teacher_id', 'notes'],
         ];
         $whitelist = $allowedFields[$collection] ?? null;
@@ -1805,7 +1980,14 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
 }
 
 // ── Data endpoints ──
-$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions', 'agents', 'agencies'];
+$dataRoutes = ['courses', 'classes', 'enrollments', 'attendance', 'exams', 'fly_logs', 'certifications', 'tuitions', 'agencies', 'transactions'];
+
+// ── Alias: fly-logs → fly_logs ──
+if (($parts[0] ?? '') === 'fly-logs') {
+    $_GET['action'] = 'fly_logs' . (isset($parts[1]) ? '/' . $parts[1] : '');
+    $path = $_GET['action'];
+    $parts = array_values(array_filter(explode('/', $path)));
+}
 
 foreach ($dataRoutes as $route) {
     $matches = ($parts[0] ?? '') === $route || (($parts[0] ?? '') === 'auth' && ($parts[1] ?? '') === $route);
@@ -1817,13 +1999,17 @@ foreach ($dataRoutes as $route) {
         if (in_array($route, ['exams', 'fly_logs', 'certifications', 'attendance', 'classes'])) {
             $roles[] = 'TEACHER';
         }
+        // ACCOUNTANT can view enrollments & tuitions (cần cho duyệt học phí)
+        if (in_array($route, ['enrollments', 'tuitions']) && $method === 'GET') {
+            $roles[] = 'ACCOUNTANT';
+        }
+        // ACCOUNTANT can view agencies & transactions (cần cho kế toán đối soát)
+        if (in_array($route, ['agencies', 'transactions']) && $method === 'GET') {
+            $roles[] = 'ACCOUNTANT';
+        }
         // STUDENT can GET classes (để xem lớp của mình)
         if ($route === 'classes' && $method === 'GET' && !($parts[$idIdx] ?? null)) {
             $pubGet = true;
-        }
-        // AGENCY/ADMIN can access agents/agencies data
-        if (in_array($route, ['agents', 'agencies'])) {
-            $roles[] = 'AGENCY';
         }
         handleCRUD($route, $roles, $pubGet);
     }
@@ -2351,7 +2537,9 @@ if (($parts[0] ?? '') === 'admin' && ($parts[1] ?? '') === 'toggle-freeze') {
     }
     unset($u);
     if (!$found) jsonResponse(['error' => 'Không tìm thấy học viên'], 404);
-    saveData('users', $users);
+    if (!saveData('users', $users)) {
+        jsonResponse(['error' => 'Lỗi hệ thống: Không thể lưu dữ liệu người dùng. Vui lòng thử lại.'], 500);
+    }
 
     // Update tuition
     $tuitions = loadData('tuitions');

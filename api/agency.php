@@ -250,7 +250,7 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'me') {
 // GET /api/agency/list — Admin lấy danh sách tất cả đại lý
 if ($method === 'GET' && ($parts[0] ?? '') === 'list') {
     if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
-    if (!in_array($auth['role'], ['ADMIN', 'STAFF'])) {
+    if (!in_array($auth['role'], ['ADMIN', 'STAFF', 'ACCOUNTANT'])) {
         jsonResponse(['error' => 'Forbidden'], 403);
     }
 
@@ -277,7 +277,8 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'list') {
         $result[] = $entry;
     }
 
-    jsonResponse(['agencies' => $result]);
+    // Trả về data format nhất quán với api-v1: { data: [...] }
+    jsonResponse(['data' => $result, 'agencies' => $result]);
 }
 
 // GET /api/agency/get/{id} — Admin lấy chi tiết 1 đại lý
@@ -1043,7 +1044,9 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'my-students') {
             $tAmount = (int)($invoice['finalPrice'] ?? $tBaseAmount);
             $tTotalPaid = (int)($invoice['totalPaid'] ?? 0);
             if (($invoice['status'] ?? '') === 'paid') $tTotalPaid = $tBaseAmount;
-            $tRemainingDue = max(0, $tBaseAmount - $tTotalPaid);
+            // FIX: remainingDue = max(0, finalPrice - totalPaid), không phải basePrice - totalPaid
+            $tFinalPrice = (int)($invoice['finalPrice'] ?? $tBaseAmount);
+            $tRemainingDue = max(0, $tFinalPrice - $tTotalPaid);
             $tDiscountPercent = (float)($invoice['agencyDiscountPercent'] ?? 0);
             $tOwesToSmc = $tBaseAmount > 0 ? (int)($tBaseAmount * (1 - $tDiscountPercent / 100)) : 0;
             $tStatus = $invoice['status'] ?? 'unpaid';
@@ -1287,7 +1290,9 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'report') {
         $discAmount = (int)($inv['agencyDiscountAmount'] ?? 0);
         $paid = (int)($inv['totalPaid'] ?? 0);
         if (($inv['status'] ?? '') === 'paid') $paid = max($paid, $baseAmount);
-        $unpaid = max(0, $baseAmount - $paid);  // FIX: dùng baseAmount làm mốc
+        // FIX: remainingDue = max(0, finalPrice - totalPaid), không phải basePrice - totalPaid
+        $fpFinal = (int)($inv['finalPrice'] ?? $baseAmount);
+        $unpaid = max(0, $fpFinal - $paid);
 
         // FIX: Phải nộp SMC = basePrice × (1 - CK%) — đồng bộ với Admin
         $discPct = (float)($inv['agencyDiscountPercent'] ?? $agencyDiscountPercent);
@@ -1298,7 +1303,7 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'report') {
         $seenStudentCourse[$seenKey] = true;
 
         $totalBaseAmount += $baseAmount;
-        $totalActualAmount += $baseAmount;          // Dùng baseAmount làm mốc chính
+        $totalActualAmount += $fpFinal;              // FIX: dùng finalPrice, không phải baseAmount
         $totalDiscount += $discAmount;
         $totalPaid += $paid;
         $totalUnpaid += $unpaid;
@@ -1332,11 +1337,11 @@ if ($method === 'GET' && ($parts[0] ?? '') === 'report') {
             'courseName' => $course['name'] ?? ($inv['courseName'] ?? ''),
             'rankGroup' => $groupName,
             'basePrice' => $baseAmount,        // Học phí gốc
-            'actualPrice' => $baseAmount,       // = basePrice (học viên nộp theo giá gốc)
+            'actualPrice' => $fpFinal,          // FIX: dùng finalPrice (học phí sau CK)
             'discount' => $discAmount,          // CK đại lý (tham khảo)
             'discountPercent' => $discPct,
-            'paid' => $paid,                    // Đã nộp = basePrice - remainingDue
-            'unpaid' => $unpaid,                // Còn phải nộp = basePrice - paid
+            'paid' => $paid,                    // Đã nộp
+            'unpaid' => $unpaid,                // FIX: Còn phải nộp = finalPrice - paid
             'paidToSmc' => $oweToSmc,           // SMC thực nhận sau CK (tham khảo)
             'status' => $inv['status'] ?? 'unpaid',
         ];
