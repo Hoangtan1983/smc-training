@@ -6,6 +6,10 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "smc-prod",
+      "url": "https://smc-training.com"
     }
   ]
 }
