@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetEnrollments, apiUpdateEnrollment, apiGetUsers, apiGetCourses, apiGetClasses, apiRecordPayment, emitDataChange } from '../../data/api';
+import { apiGetEnrollments, apiUpdateEnrollment, apiGetUsers, apiGetCourses, apiGetClasses, apiRecordPayment, emitDataChange, onDataChange } from '../../data/api';
 import { Search, Plus, Check, DollarSign, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,7 +16,7 @@ export default function StaffPayments() {
   const [payMethod, setPayMethod] = useState('bank_transfer');
   const [agencies, setAgencies] = useState([]);
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     try {
       const [enrData, userData, courseData, classData] = await Promise.all([
         apiGetEnrollments().catch(() => []),
@@ -40,9 +40,16 @@ export default function StaffPayments() {
       } catch {}
     } catch {}
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('enrollments', () => loadAll());
+    const unsub2 = onDataChange('all', (d) => { if (['enrollments', 'users', 'courses', 'classes', 'tuitions'].includes(d?.changed)) loadAll(); });
+    return () => { unsub1(); unsub2(); };
+  }, [loadAll]);
 
   const handlePayment = async (studentId) => {
     try {

@@ -1,17 +1,8 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
 
+// https://vite.dev/config/
+// LƯU Ý: bỏ @vitejs/plugin-react (babel) do treo khi build production;
+// dùng esbuild JSX automatic (React 17+) thay thế — nhanh và ổn định.
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: '0.0.0.0',
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'https://smc-training.com',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
-  },
-});
+  esbuild: { jsx: 'automatic' },
+})

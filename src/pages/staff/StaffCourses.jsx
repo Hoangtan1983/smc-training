@@ -11,7 +11,7 @@ export default function StaffCourses() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', hours: 140, description: '', status: 'ACTIVE' });
+  const [form, setForm] = useState({ name: '', hours: 140, description: '', status: 'active' });
 
   const loadCourses = async () => {
     try {
@@ -54,12 +54,12 @@ export default function StaffCourses() {
     emitDataChange('courses', { action: editing ? 'updated' : 'created' });
     setShowForm(false);
     setEditing(null);
-    setForm({ name: '', hours: 140, description: '', status: 'ACTIVE' });
+    setForm({ name: '', hours: 140, description: '', status: 'active' });
   };
 
   const handleEdit = (course) => {
     setEditing(course.id);
-    setForm({ name: course.name || '', hours: course.hours || course.totalHours || 140, description: course.description || '', status: course.status || 'ACTIVE' });
+    setForm({ name: course.name || '', hours: course.hours || course.totalHours || 140, description: course.description || '', status: course.status || 'active' });
     setShowForm(true);
   };
 
@@ -90,7 +90,7 @@ export default function StaffCourses() {
           <h1 className="text-2xl font-extrabold text-gray-900">Quản lý Khóa học</h1>
           <p className="text-sm text-gray-500 mt-0.5">{courses.length} khóa học</p>
         </div>
-        <button onClick={() => { setEditing(null); setForm({ name: '', hours: 140, description: '', status: 'ACTIVE' }); setShowForm(true); }} className="btn-primary flex items-center gap-1.5">
+        <button onClick={() => { setEditing(null); setForm({ name: '', hours: 140, description: '', status: 'active' }); setShowForm(true); }} className="btn-primary flex items-center gap-1.5">
           <Plus className="w-4 h-4" /> Tạo khóa học
         </button>
       </div>
@@ -103,8 +103,8 @@ export default function StaffCourses() {
         </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field w-auto">
           <option value="all">Tất cả trạng thái</option>
-          <option value="ACTIVE">Đang mở</option>
-          <option value="INACTIVE">Đã đóng</option>
+          <option value="active">Đang mở</option>
+          <option value="inactive">Đã đóng</option>
         </select>
       </div>
 
@@ -126,8 +126,8 @@ export default function StaffCourses() {
                 <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
                   <Clock className="w-3 h-3" /> {course.hours}h
                   <span>•</span>
-                  <span className={course.status === 'ACTIVE' ? 'text-green-600' : 'text-red-500'}>
-                    {course.status === 'ACTIVE' ? 'Đang mở' : 'Đã đóng'}
+                  <span className={course.status === 'active' ? 'text-green-600' : 'text-red-500'}>
+                    {course.status === 'active' ? 'Đang mở' : 'Đã đóng'}
                   </span>
                   <span>•</span>
                   <span className="flex items-center gap-1"><School className="w-3 h-3" /> {courseClasses.length} lớp</span>
@@ -185,8 +185,8 @@ export default function StaffCourses() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
                 <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="input-field">
-                  <option value="ACTIVE">Đang mở</option>
-                  <option value="INACTIVE">Đã đóng</option>
+                  <option value="active">Đang mở</option>
+                  <option value="inactive">Đã đóng</option>
                 </select>
               </div>
               <div className="flex gap-3 pt-2">

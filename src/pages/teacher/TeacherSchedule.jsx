@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetClasses, apiGetCourses } from '../../data/api';
+import { apiGetClasses, apiGetCourses, onDataChange } from '../../data/api';
 import { loadData } from '../../data/store';
 import {
   Calendar, Clock, MapPin, School, BookOpen, Monitor, Users,
@@ -14,7 +14,7 @@ export default function TeacherSchedule() {
   const [allClasses, setAllClasses] = useState([]);
   const [courses, setCourses] = useState([]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     Promise.all([
       apiGetClasses().catch(() => []),
       apiGetCourses().catch(() => []),
@@ -23,6 +23,15 @@ export default function TeacherSchedule() {
       setCourses(Array.isArray(coursesData) ? coursesData : []);
     });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('classes', () => load());
+    const unsub2 = onDataChange('all', (d) => { if (['classes', 'courses', 'users'].includes(d?.changed)) load(); });
+    return () => { unsub1(); unsub2(); };
+  }, [load]);
 
   const myClasses = allClasses.filter(c => (c.teacher_ids || []).includes(user?.id));
 

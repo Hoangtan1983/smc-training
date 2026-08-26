@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { loadData, saveData, loadFromStorage } from '../../data/store';
-import { onDataChange, apiGetMyTuition, apiGetStudentInvoices, apiGetClasses, apiGetCourses, apiGetEnrollments } from '../../data/api';
+import { onDataChange, apiGetMyTuition, apiGetStudentInvoices, apiGetClasses, apiGetCourses, apiGetEnrollments, apiGetUsers } from '../../data/api';
 import { MODULE_INFO } from '../../data/questionBank';
 import {
   BookOpen, Calendar, Award, TrendingUp, Play, FileText,
@@ -100,7 +100,7 @@ export default function StudentDashboard() {
       const courseModules = foundCourse?.modules || [];
       setModules(courseModules.length > 0 ? courseModules : UAV_STANDARD_MODULES);
 
-      const users = loadData('users', []);
+      const users = await apiGetUsers().catch(() => []);
       const allTeachers = users.filter(u => u.role === 'TEACHER');
       if (foundClass) {
         setClassTeachers(allTeachers.filter(u => (foundClass.teacher_ids || []).includes(u.id)));
@@ -129,7 +129,7 @@ export default function StudentDashboard() {
       fetchMyClass();
     });
     const unsub2 = onDataChange('all', (detail) => {
-      if (detail?.changed === 'tuitions' || detail?.changed === 'users' || detail?.changed === 'classes' || detail?.changed === 'enrollments') {
+      if (['tuitions', 'users', 'classes', 'enrollments', 'courses'].includes(detail?.changed)) {
         fetchMyTuition();
         fetchMyClass();
       }
@@ -233,14 +233,8 @@ export default function StudentDashboard() {
                 {paymentStatus === 'paid' ? '✅ Đã thanh toán đủ' : paymentStatus === 'partial' ? '⚠️ Chưa thanh toán đủ' : '⏳ Chưa thanh toán'}
               </div>
               <div className="text-[0.75rem] text-[#8E8E93]">
-                Học phí: {formatPrice(coursePrice)}
-                {coursePrice > 0 && totalPaid > 0 && ` — Đã đóng: ${formatPrice(totalPaid)}`}
+                Vui lòng liên hệ trung tâm để biết chi tiết học phí
               </div>
-              {remainingDue > 0 && (
-                <div className="text-[0.6875rem] text-red-500 mt-0.5">
-                  Còn thiếu: {formatPrice(remainingDue)}
-                </div>
-              )}
             </div>
           </div>
           {paymentStatus === 'partial' && myTuition?.dueDate && (
@@ -336,11 +330,7 @@ export default function StudentDashboard() {
                 <div className="space-y-2 text-[0.875rem]">
                   <div className="flex justify-between"><span className="text-[#8E8E93]">Mã khóa học:</span><span className="font-medium">{myCourse.code || myCourse.id}</span></div>
                   <div className="flex justify-between"><span className="text-[#8E8E93]">Tên khóa học:</span><span className="font-medium">{myCourse.name}</span></div>
-                  <div className="flex justify-between"><span className="text-[#8E8E93]">Học phí theo hạng:</span><span className="font-bold text-[#007AFF]">{formatPrice(myCourse.price)}</span></div>
-                  <div className="flex justify-between"><span className="text-[#8E8E93]">Đã đóng:</span><span className="font-medium text-green-600">{formatPrice(totalPaid)}</span></div>
-                  {remainingDue > 0 && (
-                    <div className="flex justify-between"><span className="text-[#8E8E93]">Còn phải đóng:</span><span className="font-medium text-red-500">{formatPrice(remainingDue)}</span></div>
-                  )}
+                  <div className="flex justify-between"><span className="text-[#8E8E93]">Tình trạng học phí:</span><span className="font-medium">{paymentStatus === 'paid' ? 'Đã nộp đủ' : paymentStatus === 'partial' ? 'Chưa nộp đủ' : 'Chưa thanh toán'}</span></div>
                   <hr className="my-1" />
                   <div className="flex justify-between"><span className="text-[#8E8E93]">Lý thuyết:</span><span className="font-medium">{myCourse.total_hours_theory || 0}h</span></div>
                   <div className="flex justify-between"><span className="text-[#8E8E93]">Thực hành:</span><span className="font-medium">{myCourse.total_hours_practice || 0}h</span></div>
@@ -370,8 +360,8 @@ export default function StudentDashboard() {
                     <span className="font-medium">{myClass?.name || 'Chưa xếp lớp'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#8E8E93]">Đã đóng:</span>
-                    <span className="font-medium text-green-600">{formatPrice(myEnrollment.payment?.paid || totalPaid)}</span>
+                    <span className="text-[#8E8E93]">Tình trạng học phí:</span>
+                    <span className="font-medium">{paymentStatus === 'paid' ? 'Đã nộp đủ' : paymentStatus === 'partial' ? 'Chưa nộp đủ' : 'Chưa thanh toán'}</span>
                   </div>
                 </div>
               ) : (

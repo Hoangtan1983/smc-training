@@ -432,7 +432,7 @@ export default function AdminClasses() {
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Khóa học</label>
                 <select value={form.course_id} onChange={e => setForm({...form, course_id: e.target.value})} className="input-field" required>
                   <option value="">Chọn khóa học...</option>
-                  {courses.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                  {courses.filter(c => c.status === 'active').map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
                 </select>
                 {form.course_id && (() => {
                   const existingClasses = classes.filter(c => c.course_id === form.course_id && c.id !== (editing?.id || ''));

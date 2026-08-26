@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   apiGetChangeRequests, apiUpdateChangeRequest, apiGetUsers, apiGetClasses,
-  apiUpdateClass, apiUpdateTuitionStep, apiAssignClass, emitDataChange, onDataChange,
+  apiAssignClass, emitDataChange, onDataChange,
 } from '../../data/api';
 import {
   ArrowLeftRight, Ban, Wallet, Search, Shield, CheckCircle, XCircle,
@@ -64,29 +64,14 @@ export default function AdminChangeRequests() {
     try {
       // Thực hiện hành động tương ứng
       if (req.type === 'change_class') {
-        // Dùng apiAssignClass để server tự động: gỡ khỏi lớp cũ, thêm vào lớp mới, cập nhật enrollment
-        // apiAssignClass quét TẤT CẢ các lớp để gỡ học viên → đảm bảo mỗi HV chỉ thuộc 1 lớp
+        // apiAssignClass tự gỡ khỏi lớp cũ, thêm vào lớp mới, cập nhật enrollment
         await apiAssignClass(req.studentId, req.toClassId, req.fromClassId || '');
-
-        // Cập nhật tuition step
-        await apiUpdateTuitionStep({
-          studentId: req.studentId, step: 'assigned', status: 'paid',
-          extra: { classId: req.toClassId, className: req.toClassName },
-        });
         toast.dismiss(loadingToast);
         toast.success(`✅ Đã chuyển "${req.studentName}" sang lớp ${req.toClassName}`);
       } else if (req.type === 'reserve') {
-        await apiUpdateTuitionStep({
-          studentId: req.studentId, step: 'reserved', status: 'reserved',
-          extra: { reserveReason: req.reason },
-        });
         toast.dismiss(loadingToast);
         toast.success(`✅ Đã bảo lưu cho "${req.studentName}"`);
       } else if (req.type === 'refund') {
-        await apiUpdateTuitionStep({
-          studentId: req.studentId, step: 'refunded', status: 'refunded',
-          extra: { refundAmount: req.amount, refundReason: req.reason },
-        });
         toast.dismiss(loadingToast);
         toast.success(`✅ Đã ghi nhận hoàn phí ${req.amount?.toLocaleString('vi-VN')}đ cho "${req.studentName}"`);
       }

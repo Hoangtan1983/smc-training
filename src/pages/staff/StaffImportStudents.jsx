@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, UserPlus, Plus, Trash2, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
+import { apiGetAgencies } from '../../data/api';
 
 const TEMPLATE_DATA = [
   ['Họ tên', 'Số điện thoại', 'Email', 'Hạng thi', 'Học phí', 'Đã nộp', 'Địa chỉ', 'Ghi chú'],
@@ -40,6 +41,14 @@ export default function AgencyImportStudents() {
 
   // ── Manual entry state ──
   const [manualStudents, setManualStudents] = useState([{ ...EMPTY_STUDENT }]);
+  const [agencies, setAgencies] = useState([]);
+  const [selectedAgencyId, setSelectedAgencyId] = useState('');
+
+  useEffect(() => {
+    apiGetAgencies().then(res => {
+      setAgencies(Array.isArray(res) ? res : (res?.data || []));
+    }).catch(() => {});
+  }, []);
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
@@ -101,7 +110,7 @@ export default function AgencyImportStudents() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ students: fileStudents }),
+        body: JSON.stringify({ students: fileStudents, agencyId: selectedAgencyId }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -166,7 +175,7 @@ export default function AgencyImportStudents() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ students: rows }),
+        body: JSON.stringify({ students: rows, agencyId: selectedAgencyId }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -185,6 +194,7 @@ export default function AgencyImportStudents() {
 
   // ── Hàm gọi chung cho nút "Nhập ngay" (theo tab active) ──
   const handleImport = () => {
+    if (!selectedAgencyId) { toast.error('Vui lòng chọn đại lý trước khi nhập'); return; }
     if (activeTab === 'upload') {
       handleFileImport();
     } else {
@@ -195,8 +205,24 @@ export default function AgencyImportStudents() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">Nhập danh sách học viên</h1>
-        <p className="text-slate-500 mt-1">Upload file Excel/CSV hoặc nhập thủ công từng học viên vào đại lý của bạn</p>
+        <h1 className="text-2xl font-bold text-slate-800">Nhập học viên cho Đại lý</h1>
+        <p className="text-slate-500 mt-1">Upload file Excel/CSV hoặc nhập thủ công — học viên sẽ được gán vào đại lý bạn chọn bên dưới</p>
+      </div>
+
+      {/* ── Chọn đại lý ── */}
+      <div className="card p-4">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">Đại lý nhận học viên *</label>
+        <select
+          value={selectedAgencyId}
+          onChange={e => setSelectedAgencyId(e.target.value)}
+          className="input-field w-full sm:max-w-sm"
+        >
+          <option value="">— Chọn đại lý —</option>
+          {agencies.map(a => (
+            <option key={a.id} value={a.id}>{a.name || a.agent_name || a.agentName || a.code}</option>
+          ))}
+        </select>
+        {!selectedAgencyId && <p className="text-xs text-amber-600 mt-1">Vui lòng chọn đại lý trước khi nhập</p>}
       </div>
 
       {/* ── Tabs ── */}

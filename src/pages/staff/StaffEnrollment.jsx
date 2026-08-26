@@ -39,9 +39,9 @@ export default function StaffEnrollment() {
     });
   }, []);
 
-  const handleApprove = async (studentId) => {
+  const handleApprove = async (enrollmentId) => {
     try {
-      await apiUpdateEnrollment(studentId, { status: 'active', stages: { enrollment: { status: 'completed', completed_at: new Date().toISOString(), confirmed_by: 'staff' } } });
+      await apiUpdateEnrollment(enrollmentId, { status: 'active', training_stages: { enrollment: { status: 'completed', completed_at: new Date().toISOString(), confirmed_by: 'staff' } } });
       toast.success('Đã duyệt hồ sơ!');
       await loadAll();
     } catch (err) {
@@ -71,11 +71,11 @@ export default function StaffEnrollment() {
               </div>
               {enr.status === 'pending' && (
                 <div className="flex gap-2 mt-4">
-                  <button onClick={() => handleApprove(enr.student_id)} className="btn-primary text-xs px-4 py-2 flex items-center gap-1"><Check className="w-4 h-4" /> Duyệt hồ sơ</button>
+                  <button onClick={() => handleApprove(enr.id)} className="btn-primary text-xs px-4 py-2 flex items-center gap-1"><Check className="w-4 h-4" /> Duyệt hồ sơ</button>
                   <button onClick={async () => {
                     if (!window.confirm(`Bạn có chắc muốn từ chối hồ sơ của ${student?.fullName || 'học viên này'}?`)) return;
                     try {
-                      await apiUpdateEnrollment(enr.student_id, { status: 'rejected', stages: { enrollment: { status: 'rejected', completed_at: new Date().toISOString(), confirmed_by: 'staff' } } });
+                      await apiUpdateEnrollment(enr.id, { status: 'cancelled', training_stages: { enrollment: { status: 'rejected', completed_at: new Date().toISOString(), confirmed_by: 'staff' } } });
                       toast.success('Đã từ chối hồ sơ!');
                       await loadAll();
                     } catch (err) {

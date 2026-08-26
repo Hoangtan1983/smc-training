@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   apiListTransactions, apiConfirmReceipt, apiRejectReceipt,
+  apiListEnrollments, apiApproveEnrollment, apiRejectEnrollment,
+  apiGetUsers, apiGetAgencies,
   onDataChange, emitDataChange
 } from '../../data/api';
-import { Check, X, Eye, Search, Filter, DollarSign, Clock, AlertTriangle, Building2 } from 'lucide-react';
+import { Check, X, Eye, Search, Filter, DollarSign, Clock, AlertTriangle, Building2, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const formatPrice = (v) => {
@@ -28,20 +30,32 @@ const PAYMENT_METHOD_LABELS = {
 export default function AccountantApprovals() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState([]);
-  const [activeTab, setActiveTab] = useState('pending_all');
+  const [enrollments, setEnrollments] = useState([]);
+  const [agencies, setAgencies] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [activeTab, setActiveTab] = useState('enrollments');
   const [search, setSearch] = useState('');
   const [selectedTxn, setSelectedTxn] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  // Enrollment reject modal
+  const [enrRejectModal, setEnrRejectModal] = useState(null);
+  const [enrRejectReason, setEnrRejectReason] = useState('');
+  // Enrollment approve modal (nhập số tiền đã nộp)
+  const [enrApproveModal, setEnrApproveModal] = useState(null);
+  const [enrApproveAmount, setEnrApproveAmount] = useState('');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      // Load cả staff_confirmed và pending
-      const [staffRes, pendingRes] = await Promise.all([
+      // Load cả staff_confirmed và pending transactions
+      const [staffRes, pendingRes, enrRes, userRes, agencyRes] = await Promise.all([
         apiListTransactions({ status: 'staff_confirmed', limit: 100 }),
         apiListTransactions({ status: 'pending', limit: 100 }),
+        apiListEnrollments('staff').catch(() => ({ data: [] })),
+        apiGetUsers().catch(() => ({ users: [] })),
+        apiGetAgencies().catch(() => []),
       ]);
 
       const staffTxns = (staffRes?.data || []).map(t => ({ ...t, _source: 'staff_confirmed' }));
@@ -49,6 +63,9 @@ export default function AccountantApprovals() {
 
       // Merge, staff_confirmed lên trước (ưu tiên duyệt tiền mặt)
       setTransactions([...staffTxns, ...pendingTxns]);
+      setEnrollments(enrRes?.data || []);
+      setUsers(userRes?.users || userRes || []);
+      setAgencies(Array.isArray(agencyRes) ? agencyRes : (agencyRes?.data || []));
     } catch (err) {
       console.error('Load approvals error:', err);
     }
@@ -58,9 +75,21 @@ export default function AccountantApprovals() {
   useEffect(() => {
     loadData();
     const unsub1 = onDataChange('transactions', loadData);
-    const unsub2 = onDataChange('all', loadData);
-    return () => { unsub1(); unsub2(); };
+    const unsub2 = onDataChange('enrollments', loadData);
+    const unsub3 = onDataChange('all', loadData);
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
+
+  // ── Tên đại lý theo student_id ──
+  const getAgencyName = (studentId) => {
+    if (!studentId) return null;
+    const u = users.find(x => String(x.id) === String(studentId));
+    const aid = u?.agencyId ?? u?.agency_id;
+    if (!aid) return null;
+    const sid = String(aid);
+    const agency = agencies.find(a => String(a.id) === sid);
+    return agency ? (agency.name || agency.agent_name || agency.agentName) : ('Đại lý #' + sid);
+  };
 
   const filteredTxns = transactions.filter(t => {
     if (activeTab === 'staff_confirmed') return t.status === 'staff_confirmed';
@@ -98,6 +127,50 @@ export default function AccountantApprovals() {
     setProcessing(false);
   };
 
+  // ── Duyệt hồ sơ enrollment (Nhân viên → Kế toán) ──
+  const handleApproveEnrollment = async (enr, amount) => {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      const res = await apiApproveEnrollment({ enrollmentId: enr.id, step: 'accountant', note: 'Kế toán đã đối soát & duyệt', amount: Number(amount) || 0 });
+      const pay = res?.payment;
+      if (pay) {
+        if (pay.paymentStatus === 'fully_paid') {
+          toast.success(`Đã ghi nhận nộp đủ ${Number(pay.final).toLocaleString('vi-VN')} ₫! Chuyển cho Admin kích hoạt.`);
+        } else {
+          toast.success(`Đã ghi nhận nộp ${Number(pay.paid).toLocaleString('vi-VN')} ₫, còn thiếu ${Number(pay.remaining).toLocaleString('vi-VN')} ₫.`);
+        }
+      } else {
+        toast.success('Đã duyệt hồ sơ! Chuyển cho Admin kích hoạt.');
+      }
+      setEnrApproveModal(null);
+      setEnrApproveAmount('');
+      emitDataChange('enrollments');
+      emitDataChange('all');
+      loadData();
+    } catch (err) {
+      toast.error('Lỗi: ' + (err.message || 'Không thể duyệt hồ sơ'));
+    }
+    setProcessing(false);
+  };
+
+  const handleRejectEnrollment = async () => {
+    if (!enrRejectModal || processing) return;
+    setProcessing(true);
+    try {
+      await apiRejectEnrollment({ enrollmentId: enrRejectModal.id, reason: enrRejectReason || 'Không đạt yêu cầu' });
+      toast.success('Đã từ chối hồ sơ.');
+      setEnrRejectModal(null);
+      setEnrRejectReason('');
+      emitDataChange('enrollments');
+      emitDataChange('all');
+      loadData();
+    } catch (err) {
+      toast.error('Lỗi: ' + (err.message || 'Không thể từ chối'));
+    }
+    setProcessing(false);
+  };
+
   const handleReject = async () => {
     if (!rejectModal || processing) return;
     setProcessing(true);
@@ -120,6 +193,7 @@ export default function AccountantApprovals() {
   };
 
   const tabs = [
+    { key: 'enrollments', label: '📋 Hồ sơ chờ duyệt', count: enrollments.length },
     { key: 'pending_all', label: 'Chờ duyệt', count: transactions.filter(t => t.status === 'pending' || t.status === 'staff_confirmed').length },
     { key: 'staff_confirmed', label: 'Tiền mặt (NV đã thu)', count: transactions.filter(t => t.status === 'staff_confirmed').length },
     { key: 'pending', label: 'Chuyển khoản', count: transactions.filter(t => t.status === 'pending').length },
@@ -167,6 +241,72 @@ export default function AccountantApprovals() {
         ))}
       </div>
 
+      {/* ── TAB: Hồ sơ chờ Kế toán duyệt (từ Nhân viên chuyển sang) ── */}
+      {activeTab === 'enrollments' && (
+        <div className="space-y-3">
+          {enrollments.length === 0 && (
+            <div className="text-center py-16 text-slate-500">
+              <FileText size={48} className="mx-auto mb-3 text-slate-600" />
+              <p>Không có hồ sơ nào chờ duyệt</p>
+              <p className="text-xs mt-1 text-slate-600">Hồ sơ sẽ xuất hiện ở đây sau khi Nhân viên duyệt tài khoản học viên</p>
+            </div>
+          )}
+          {enrollments.map(enr => (
+            <div key={enr.id} className="bg-slate-800 rounded-xl border border-slate-700 p-4 hover:border-slate-600 transition-colors">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                      <Clock size={12} /> Chờ Kế toán duyệt
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      NV duyệt: {enr.approval_staff_name || '—'} • {enr.approval_staff_at ? new Date(enr.approval_staff_at).toLocaleDateString('vi-VN') : '—'}
+                    </span>
+                  </div>
+                  <p className="text-white font-semibold">{enr.studentName || enr.student_name || `Học viên #${enr.student_id}`}</p>
+                  <div className="flex items-center gap-4 mt-1 text-xs text-slate-400 flex-wrap">
+                    {getAgencyName(enr.student_id) && (
+                      <span className="flex items-center gap-1 text-blue-400 font-medium"><Building2 size={12} /> {getAgencyName(enr.student_id)}</span>
+                    )}
+                    {enr.student_phone && <span>📞 {enr.student_phone}</span>}
+                    {enr.enrollment_code && <span>🎓 {enr.enrollment_code}</span>}
+                    <span>📋 {enr.courseName || enr.course_name || '—'}</span>
+                    <span>💰 {enr.total_amount ? Number(enr.total_amount).toLocaleString('vi-VN') + ' ₫' : '—'}</span>
+                    {enr.approval_staff_note && <span className="text-slate-500">📝 {enr.approval_staff_note}</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <button
+                    onClick={() => {
+                      setEnrApproveModal(enr);
+                      const _final = Number(enr.final_amount || enr.finalPrice || 0);
+                      const _paid = Number(enr.paid_amount || 0);
+                      setEnrApproveAmount(Math.max(0, _final - _paid) || '');
+                    }}
+                    disabled={processing}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500
+                               text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Check size={16} /> Duyệt
+                  </button>
+                  <button
+                    onClick={() => { setEnrRejectModal(enr); setEnrRejectReason(''); }}
+                    disabled={processing}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600/20 hover:bg-red-600/30
+                               text-red-400 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <X size={16} /> Từ chối
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search + Transaction list — chỉ hiển thị cho tab phiếu thu */}
+      {activeTab !== 'enrollments' && (
+        <>
       {/* Search */}
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -205,7 +345,7 @@ export default function AccountantApprovals() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <p className="text-white font-semibold">
+                      <p className="text-white font-semibold text-base">
                         {txn.student_name || txn.full_name || `Học viên #${txn.student_id}`}
                       </p>
                       <p className="text-emerald-400 font-bold text-lg">
@@ -214,7 +354,8 @@ export default function AccountantApprovals() {
                     </div>
 
                     <div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
-                      <span>📋 {txn.receipt_code || `#${txn.id}`}</span>
+                      {txn.courseName && <span>📋 {txn.courseName}</span>}
+                      <span>🧾 {txn.receipt_code || `#${txn.id}`}</span>
                       {txn.enrollment_code && <span>🎓 {txn.enrollment_code}</span>}
                       {txn.agency_name && (
                         <span className="inline-flex items-center gap-1 text-orange-400">
@@ -296,6 +437,75 @@ export default function AccountantApprovals() {
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium
                            rounded-lg transition-colors disabled:opacity-50"
               >
+                {processing ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+        </>
+      )}
+
+      {/* Enrollment Approve Modal (nhập số tiền đã nộp) */}
+      {enrApproveModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setEnrApproveModal(null)}>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">Duyệt hồ sơ & ghi nhận thanh toán</h3>
+            <p className="text-slate-400 text-sm mb-1">
+              {enrApproveModal.studentName || enrApproveModal.student_name || `#${enrApproveModal.id}`} — {enrApproveModal.courseName || enrApproveModal.course_name || ''}
+            </p>
+            <p className="text-slate-400 text-sm mb-4">
+              Tổng học phí: <span className="text-white font-medium">{formatPrice(enrApproveModal.final_amount || enrApproveModal.total_amount)}</span>
+              {Number(enrApproveModal.paid_amount || 0) > 0 && (
+                <span className="ml-2">• Đã nộp: <span className="text-amber-400">{formatPrice(enrApproveModal.paid_amount)}</span></span>
+              )}
+              <span className="ml-2">• Còn nợ: <span className="text-red-400">{formatPrice(Math.max(0, Number(enrApproveModal.final_amount || 0) - Number(enrApproveModal.paid_amount || 0)))}</span></span>
+            </p>
+            <label className="block text-sm text-slate-300 mb-1">Số tiền nộp thêm (mặc định = số còn nợ)</label>
+            <input
+              type="number"
+              min="0"
+              value={enrApproveAmount}
+              onChange={e => setEnrApproveAmount(e.target.value)}
+              placeholder="Nhập số tiền đã nộp (VNĐ)"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm
+                         placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setEnrApproveModal(null)} className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm">Hủy</button>
+              <button
+                onClick={() => handleApproveEnrollment(enrApproveModal, enrApproveAmount)}
+                disabled={processing}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {processing ? 'Đang xử lý...' : 'Xác nhận duyệt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enrollment Reject Modal */}
+      {enrRejectModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setEnrRejectModal(null)}>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">Từ chối hồ sơ</h3>
+            <p className="text-slate-400 text-sm mb-4">
+              {enrRejectModal.studentName || enrRejectModal.student_name || `#${enrRejectModal.id}`}
+            </p>
+            <textarea
+              value={enrRejectReason}
+              onChange={e => setEnrRejectReason(e.target.value)}
+              placeholder="Nhập lý do từ chối..."
+              rows={3}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm
+                         placeholder-slate-500 focus:outline-none focus:border-red-500/50 mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setEnrRejectModal(null)} className="px-4 py-2 text-slate-400 hover:text-white transition-colors text-sm">Hủy</button>
+              <button onClick={handleRejectEnrollment} disabled={processing || !enrRejectReason.trim()}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
                 {processing ? 'Đang xử lý...' : 'Xác nhận từ chối'}
               </button>
             </div>

@@ -31,7 +31,7 @@ export default function AccountantAgencies() {
     setShowDetail(agency);
     setDetailData(null);
     try {
-      const res = await apiV1GetAgentCommissions(agency.agent_code || agency.id);
+      const res = await apiV1GetAgentCommissions(agency.id || agency.agent_code);
       setDetailData(res?.data || { commissions: [], summary: {} });
     } catch {
       toast.error('Không thể tải hoa hồng');
@@ -71,7 +71,7 @@ export default function AccountantAgencies() {
                 <p className="text-xs text-gray-500">{agency.contact_person || agency.contactPerson}</p>
               </div>
               <span className="badge bg-purple-100 text-purple-700 text-xs flex items-center gap-1">
-                <Percent className="w-3 h-3" /> {agency.discount_percent || agency.discountPercent || 0}%
+                <Percent className="w-3 h-3" /> {parseFloat(agency.commission_rate) || 0}%
               </span>
             </div>
             <div className="text-sm text-gray-500 space-y-1 mb-3">
@@ -98,26 +98,24 @@ export default function AccountantAgencies() {
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
                     <div className="text-sm text-gray-500">Tổng hoa hồng</div>
-                    <div className="text-lg font-extrabold text-purple-600">{formatPrice(detailData.summary?.totalCommission || 0)}</div>
+                    <div className="text-lg font-extrabold text-purple-600">{formatPrice(detailData.commission_amount || 0)}</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <div className="text-sm text-gray-500">Đã thanh toán</div>
-                    <div className="text-lg font-extrabold text-green-600">{formatPrice(detailData.summary?.totalPaid || detailData.summary?.totalSettled || 0)}</div>
+                    <div className="text-sm text-gray-500">Tổng thu học phí</div>
+                    <div className="text-lg font-extrabold text-green-600">{formatPrice(detailData.total_collected || 0)}</div>
                   </div>
                 </div>
-                <h4 className="font-semibold text-sm mb-2">Lịch sử hoa hồng</h4>
-                {(detailData.commissions || []).length === 0 ? (
-                  <p className="text-sm text-gray-400">Chưa có dữ liệu hoa hồng</p>
-                ) : (
-                  <div className="space-y-2">
-                    {detailData.commissions.map((comm, i) => (
-                      <div key={i} className="flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2 text-sm">
-                        <span>{comm.studentName || comm.studentId}</span>
-                        <span className="font-medium text-purple-600">{formatPrice(comm.commission || comm.amount)}</span>
-                      </div>
-                    ))}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-sm text-gray-500">Số học viên</div>
+                    <div className="text-lg font-extrabold text-gray-800">{detailData.total_students || 0}</div>
                   </div>
-                )}
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <div className="text-sm text-gray-500">Tỷ lệ hoa hồng</div>
+                    <div className="text-lg font-extrabold text-gray-800">{detailData.commission_rate || 0}%</div>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 text-center">Kỳ: {detailData.period || '—'}</p>
               </div>
             ) : (
               <div className="text-center py-8"><div className="spinner mx-auto" /></div>

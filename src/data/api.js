@@ -26,6 +26,8 @@ const pathMap = {
   '/courses': 'courses',
   '/classes': 'classes',
   '/enrollments': 'enrollments',
+  '/approve-student': 'approve-student',
+  '/files': 'files',
   '/attendance': 'attendance',
   '/exams': 'exams',
   '/exam-results': 'exam-results',
@@ -217,6 +219,32 @@ export function apiGetMyEnrollments() {
   return request('GET', '/my-enrollments');
 }
 
+export async function apiListEnrollments(role = '') {
+  const data = await apiGetEnrollments().catch(() => []);
+  const list = Array.isArray(data) ? data : [];
+  if (role === 'staff') {
+    // Hồ sơ chờ Kế toán duyệt: Nhân viên đã duyệt (approval_staff_by có), Kế toán chưa duyệt (approval_accountant_by trống)
+    return { data: list.filter(e => e.approval_staff_by && !e.approval_accountant_by) };
+  }
+  if (role === 'accountant') {
+    // Hồ sơ chờ Admin kích hoạt: Kế toán đã duyệt, Admin chưa
+    return { data: list.filter(e => e.approval_accountant_by && !e.approval_admin_by) };
+  }
+  return { data: list };
+}
+
+export function apiApproveEnrollment(payload) {
+  return request('POST', '/approve-enrollment', payload);
+}
+
+export function apiRejectEnrollment(payload) {
+  return request('POST', '/reject-enrollment', payload);
+}
+
+export function apiApproveStudentV2(id, note = '', rank = '') {
+  return request('POST', `/approve-student/${id}`, { note, rank });
+}
+
 // Attendance
 export function apiGetAttendance() {
   return request('GET', '/attendance');
@@ -309,48 +337,8 @@ export function apiGetMyTuition() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TUITION SERVICE v3 (Unified — via tuition-service.php)
-// Nguyên lý: 1 Invoice → N Transactions → 1 Agency Commission
-// ═══════════════════════════════════════════════════════════════
-const TUI_SVC = '/api/tuition-service.php';
-
-// v4: Alias — tuitionRequest trỏ về tuiRequest (tuition-service.php)
-// Tránh nhầm lẫn với legacy tuitions.php
-async function tuiRequest(action, method = 'GET', body = null, extraParams = {}) {
-  let url = TUI_SVC + '?action=' + encodeURIComponent(action);
-  for (const [k, v] of Object.entries(extraParams)) {
-    if (v !== undefined && v !== null && v !== '') url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(v);
-  }
-  const headers = { 'Content-Type': 'application/json' };
-  const t = getAuthToken();
-  if (t) headers['Authorization'] = `Bearer ${t}`;
-
-  const opts = { method, headers, credentials: 'include' };
-  if (body) opts.body = JSON.stringify(body);
-
-  let res;
-  try {
-    res = await fetch(url, opts);
-  } catch (e) {
-    throw new Error('Không thể kết nối đến máy chủ');
-  }
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { throw new Error('Lỗi máy chủ: ' + text.substring(0, 200)); }
-  if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
-  return data;
-}
-
-// v4: Alias — dùng chung tuiRequest cho tuition-service.php
-// Đảm bảo các hàm fallback gọi đúng tuition-service.php (JSON backend)
-async function tuitionRequest(action, method = 'GET', body = null, extraParams = {}) {
-  return tuiRequest(action, method, body, extraParams);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SMC UNIFIED API (MySQL Backend — via smc-db.php)
-// THAY THẾ: tuition-service.php + api-v1.php + agency.php
-// Single source of truth cho mọi role
+// TUITION API — MySQL Backend (smc-db.php)
+// Tất cả thao tác học phí qua MySQL. Không còn JSON fallback.
 // ═══════════════════════════════════════════════════════════════
 const SMC_API = '/api/smc-db.php';
 
@@ -388,389 +376,50 @@ async function smcRequest(action, method = 'GET', body = null, params = {}) {
   return data;
 }
 
-// ── Invoices (MySQL — smc-db.php with fallback to JSON) ──
-export function apiCreateInvoice(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('create-invoice', 'POST', payload).catch(() => {
-      return tuitionRequest('create-invoice', 'POST', payload);
-    });
-  }
-  return tuitionRequest('create-invoice', 'POST', payload);
-}
-export function apiListInvoices(filters = {}) {
-  // v4: Ưu tiên MySQL, fallback về JSON (tuition-service.php) nếu lỗi
-  // Sau khi chạy fix-mysql-enrollments.php?confirm=yes, MySQL sẽ có dữ liệu đúng
-  if (USE_MYSQL) {
-    return smcRequest('list-invoices', 'GET', null, filters).catch(() => {
-      return tuitionRequest('list-invoices', 'GET', null, filters).catch(() => ({ data: [] }));
-    });
-  }
-  return tuitionRequest('list-invoices', 'GET', null, filters).catch(() => ({ data: [] }));
-}
-export function apiGetOverallReport() {
-  // v4: Thêm fallback về JSON nếu MySQL không khả dụng
-  if (USE_MYSQL) {
-    return smcRequest('get-overall-report').catch(() => {
-      return tuitionRequest('get-overall-report', 'GET').catch(() => ({ data: {} }));
-    });
-  }
-  return tuitionRequest('get-overall-report', 'GET').catch(() => ({ data: {} }));
-}
-export function apiGetInvoiceDetail(invoiceId) {
-  // v4: Hỗ trợ cả invoiceId dạng string (JSON) và number (MySQL)
-  if (USE_MYSQL) {
-    return smcRequest('get-invoice-detail', 'GET', null, { invoiceId }).catch(() => {
-      return tuitionRequest('get-invoice-detail', 'GET', null, { invoiceId });
-    });
-  }
-  return tuitionRequest('get-invoice-detail', 'GET', null, { invoiceId });
-}
-export function apiFreezeInvoice(invoiceId) {
-  if (USE_MYSQL) {
-    return smcRequest('freeze-invoice', 'POST', { invoiceId }).catch(() => {
-      return tuitionRequest('freeze-invoice', 'POST', { invoiceId });
-    });
-  }
-  return tuitionRequest('freeze-invoice', 'POST', { invoiceId });
-}
-export function apiUnfreezeInvoice(invoiceId) {
-  if (USE_MYSQL) {
-    return smcRequest('unfreeze-invoice', 'POST', { invoiceId }).catch(() => {
-      return tuitionRequest('unfreeze-invoice', 'POST', { invoiceId });
-    });
-  }
-  return tuitionRequest('unfreeze-invoice', 'POST', { invoiceId });
-}
-export function apiUpdateInvoice(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('update-invoice', 'POST', payload).catch(() => {
-      return tuitionRequest('update-invoice', 'POST', payload);
-    });
-  }
-  return tuitionRequest('update-invoice', 'POST', payload);
-}
-export function apiDeleteInvoice(invoiceId) {
-  if (USE_MYSQL) {
-    return smcRequest('delete-invoice', 'POST', { invoiceId }).catch(() => {
-      return tuitionRequest('delete-invoice', 'POST', { invoiceId });
-    });
-  }
-  return tuitionRequest('delete-invoice', 'POST', { invoiceId });
-}
+// ── Invoices ──
+export function apiCreateInvoice(payload) { return smcRequest('create-invoice', 'POST', payload); }
+export function apiAssignCourse(payload) { return smcRequest('assign-course', 'POST', payload); }
+export function apiListInvoices(filters = {}) { return smcRequest('list-invoices', 'GET', null, filters).catch(() => ({ data: [] })); }
+export function apiGetOverallReport() { return smcRequest('get-overall-report').catch(() => ({ data: {} })); }
+export function apiGetInvoiceDetail(invoiceId) { return smcRequest('get-invoice-detail', 'GET', null, { invoiceId }); }
+export function apiGetStudentInvoices(courseId = '') { return smcRequest('get-student-invoices', 'GET', null, { courseId }); }
+export function apiUpdateInvoice(payload) { return smcRequest('update-invoice', 'POST', payload); }
+export function apiDeleteInvoice(invoiceId) { return smcRequest('delete-invoice', 'POST', { enrollmentId: invoiceId }); }
+export function apiFreezeInvoice(invoiceId) { return smcRequest('freeze-invoice', 'POST', { enrollmentId: invoiceId }); }
+export function apiUnfreezeInvoice(invoiceId) { return smcRequest('unfreeze-invoice', 'POST', { enrollmentId: invoiceId }); }
 
-// ── Transactions (MySQL — smc-db.php with fallback to tuition-service.php) ──
-export function apiRecordPayment(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('record-payment', 'POST', payload).catch(() => {
-      return tuitionRequest('record-payment', 'POST', payload);
-    });
-  }
-  return tuitionRequest('record-payment', 'POST', payload);
-}
-export function apiSubmitReceipt(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('submit-receipt', 'POST', payload).catch(() => {
-      return tuitionRequest('submit-receipt', 'POST', payload);
-    });
-  }
-  return tuitionRequest('submit-receipt', 'POST', payload);
-}
-export function apiConfirmReceipt(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('confirm-receipt', 'POST', payload).catch(() => {
-      return tuitionRequest('confirm-receipt', 'POST', payload);
-    });
-  }
-  return tuitionRequest('confirm-receipt', 'POST', payload);
-}
-export function apiRejectReceipt(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('reject-receipt', 'POST', payload).catch(() => {
-      return tuitionRequest('reject-receipt', 'POST', payload);
-    });
-  }
-  return tuitionRequest('reject-receipt', 'POST', payload);
-}
-export function apiListTransactions(filters = {}) {
-  if (USE_MYSQL) {
-    return smcRequest('list-transactions', 'GET', null, filters).catch(() => {
-      return tuitionRequest('list-transactions', 'GET', null, filters);
-    });
-  }
-  return tuitionRequest('list-transactions', 'GET', null, filters);
-}
+// ── Payments ──
+export function apiRecordPayment(payload) { return smcRequest('record-payment', 'POST', payload); }
+export function apiSubmitReceipt(payload) { return smcRequest('submit-receipt', 'POST', payload); }
+export function apiConfirmReceipt(payload) { return smcRequest('confirm-receipt', 'POST', payload); }
+export function apiRejectReceipt(payload) { return smcRequest('reject-receipt', 'POST', payload); }
+export function apiListTransactions(filters = {}) { return smcRequest('list-transactions', 'GET', null, filters); }
+export function apiAdminApproveTransaction(payload) { return smcRequest('confirm-receipt', 'POST', payload); }
+export function apiAdminFinalApprove(payload) { return smcRequest('confirm-receipt', 'POST', payload); }
 
-// v5: Admin duyệt transaction lần cuối (3-tier approval flow)
-export function apiAdminApproveTransaction(payload) {
-  return request('POST', '/admin/approve-transaction', payload);
-}
+// ── Reports ──
+export function apiGetAgencyReport(agencyId = '') { return smcRequest('get-agency-report', 'GET', null, { agencyId }); }
+export function apiAgencyStudents(agencyId = '') { return smcRequest('agency-students', 'GET', null, { agencyId }); }
 
-// v5: Admin duyệt cuối qua tuition-service
-export function apiAdminFinalApprove(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('admin-final-approve', 'POST', payload).catch(() => {
-      return tuitionRequest('admin-final-approve', 'POST', payload);
-    });
-  }
-  return tuitionRequest('admin-final-approve', 'POST', payload);
-}
+// ── Staff Cash ──
+export function apiStaffConfirmCash(payload) { return smcRequest('staff-confirm-cash', 'POST', payload); }
+export function apiStaffCashSummary(staffId = '') { return smcRequest('staff-cash-summary', 'GET', null, { staffId }); }
+export function apiAccountantCashLedger(filters = {}) { return smcRequest('accountant-cash-ledger', 'GET', null, filters); }
+export function apiRemitCash(payload) { return smcRequest('remit-cash', 'POST', payload); }
 
-// ── Student (MySQL — smc-db.php, fallback tuition-service.php) ──
-export async function apiGetStudentInvoices(courseId = '') {
-  if (USE_MYSQL) {
-    try {
-      const res = await smcRequest('get-student-invoices', 'GET', null, { courseId });
-      const data = res?.data || [];
-      if (data.length > 0) return res;
-      console.warn('[api] smc-db returned empty invoices, falling back to JSON');
-    } catch (e) {
-      console.warn('[api] smc-db failed, falling back to JSON:', e.message);
-    }
-  }
-  // Fallback: tuition-service.php (dùng file JSON)
-  return await tuiRequest('get-student-invoice', 'GET', null, { courseId });
-}
-
-// ── Agency Report (MySQL — smc-db.php, fallback tuition-service.php) ──
-export async function apiGetAgencyReport(agencyId = '') {
-  if (USE_MYSQL) {
-    try {
-      return await smcRequest('get-agency-report', 'GET', null, { agencyId });
-    } catch (e) {
-      console.warn('[api] smc-db agency report failed, falling back to JSON:', e.message);
-    }
-  }
-  // Fallback: tuition-service.php (dùng file JSON)
-  return await tuiRequest('get-agency-report', 'GET', null, { agencyId });
-}
-
-// ── Admin Report (tuition-service.php with fallback to smc-db) ──
-// NOTE: Removed duplicate — use unified version at line ~610
-export function smcGetOverallReportDirect() {
-  if (USE_MYSQL) {
-    return smcRequest('get-overall-report').catch(() => {
-      return tuitionRequest('get-overall-report', 'GET');
-    });
-  }
-  return tuitionRequest('get-overall-report', 'GET');
-}
-
-// ── Freeze/Unfreeze (MySQL — smc-db.php) ──
-// NOTE: Removed duplicate apiFreezeInvoice/apiUnfreezeInvoice — use version at line 423 above
-
-// ── Health ──
-export function apiTuitionServiceHealth() {
-  if (USE_MYSQL) {
-    return smcRequest('health').catch(() => {
-      return tuitionRequest('health', 'GET');
-    });
-  }
-  return tuitionRequest('health', 'GET');
-}
-
-// ── Sync All (Admin: đồng bộ invoice ↔ enrollment ↔ user) ──
-export function apiSyncAllTuitions() {
-  if (USE_MYSQL) {
-    return smcRequest('sync-all', 'POST').catch(() => {
-      return tuitionRequest('sync-all', 'POST');
-    });
-  }
-  return tuitionRequest('sync-all', 'POST');
-}
-
-// ── Cleanup học viên miễn phí thuộc đại lý (Admin) ──
-export function apiCleanupFreeAgencyInvoices() {
-  if (USE_MYSQL) {
-    return smcRequest('cleanup-free-agency-invoices', 'POST').catch(() => {
-      return tuitionRequest('cleanup-free-agency-invoices', 'POST');
-    });
-  }
-  return tuitionRequest('cleanup-free-agency-invoices', 'POST');
-}
-
-// ── Đánh dấu / bỏ đánh dấu học viên miễn phí (tuition-service.php with MySQL fallback) ──
-export function apiMarkExempt(studentId, courseId = '') {
-  if (USE_MYSQL) {
-    return smcRequest('mark-exempt', 'POST', { studentId, courseId }).catch(() => {
-      return tuitionRequest('mark-exempt', 'POST', { studentId, courseId });
-    });
-  }
-  return tuitionRequest('mark-exempt', 'POST', { studentId, courseId });
-}
-export function apiUnmarkExempt(studentId) {
-  if (USE_MYSQL) {
-    return smcRequest('unmark-exempt', 'POST', { studentId }).catch(() => {
-      return tuitionRequest('unmark-exempt', 'POST', { studentId });
-    });
-  }
-  return tuitionRequest('unmark-exempt', 'POST', { studentId });
-}
-
-// ── Exam Eligibility (tuition-service.php with MySQL fallback) ──
-export function apiExamEligibility() {
-  if (USE_MYSQL) {
-    return smcRequest('exam-eligibility').catch(() => {
-      return tuitionRequest('exam-eligibility', 'GET');
-    });
-  }
-  return tuitionRequest('exam-eligibility', 'GET');
-}
-
-// ── Agency Students (tuition-service.php with MySQL fallback) ──
-export function apiAgencyStudents(agencyId = '') {
-  if (USE_MYSQL) {
-    return smcRequest('agency-students', 'GET', null, { agencyId }).catch(() => {
-      return tuitionRequest('agency-students', 'GET', null, { agencyId });
-    });
-  }
-  return tuitionRequest('agency-students', 'GET', null, { agencyId });
-}
-
-// ── Staff Cash (tuition-service.php with MySQL fallback) ──
-export function apiStaffConfirmCash(payload) {
-  if (USE_MYSQL) {
-    return smcRequest('staff-confirm-cash', 'POST', payload).catch(() => {
-      return tuitionRequest('staff-confirm-cash', 'POST', payload);
-    });
-  }
-  return tuitionRequest('staff-confirm-cash', 'POST', payload);
-}
-export function apiStaffCashSummary(staffId = '') {
-  if (USE_MYSQL) {
-    return smcRequest('staff-cash-summary', 'GET', null, { staffId }).catch(() => {
-      return tuitionRequest('staff-cash-summary', 'GET', null, { staffId });
-    });
-  }
-  return tuitionRequest('staff-cash-summary', 'GET', null, { staffId });
-}
-
-// ── Accountant (tuition-service.php with MySQL fallback) ──
-export function apiAccountantCashLedger(filters = {}) {
-  if (USE_MYSQL) {
-    return smcRequest('accountant-cash-ledger', 'GET', null, filters).catch(() => {
-      return tuitionRequest('accountant-cash-ledger', 'GET', null, filters);
-    });
-  }
-  return tuitionRequest('accountant-cash-ledger', 'GET', null, filters);
-}
-export function apiRemitCash(payload) {
-  return smcRequest('remit-cash', 'POST', payload);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// UNIFIED API (MySQL — smc-db.php)
-// Các hàm này sẽ thay thế TẤT CẢ apiV1* + tuition-service + agency.php
-// khi MySQL được kích hoạt. Hiện tại fallback về tuition-service.php
-// ═══════════════════════════════════════════════════════════════
-
-// Flag: MySQL luôn được dùng làm nguồn dữ liệu chính
-let USE_MYSQL = true; // Mặc định dùng MySQL — single source of truth. Fallback sang JSON nếu MySQL lỗi.
-
-// Tự động kiểm tra MySQL readiness khi app khởi động
-setTimeout(async () => {
-  try {
-    const res = await fetch('/api/smc-db.php?action=check-mysql-ready', { credentials: 'include' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ready) {
-        USE_MYSQL = true;
-        console.debug('[SMC] MySQL active! Invoices:', data.invoices, 'Payments:', data.payments);
-      } else {
-        USE_MYSQL = false;
-        console.warn('[SMC] MySQL not ready, falling back to JSON');
-      }
-    }
-  } catch (e) {
-    USE_MYSQL = false;
-    console.warn('[SMC] MySQL check failed, using JSON fallback');
-  }
-}, 500);
-
-export function enableMySQL() { USE_MYSQL = true; }
-export function disableMySQL() { USE_MYSQL = false; }
-export function isMySQLEnabled() { return USE_MYSQL; }
-
-// Unified: list-invoices (thay thế apiListInvoices + apiV1GetEnrollments)
-export function apiListInvoicesUnified(filters = {}) {
-  if (USE_MYSQL) return smcRequest('list-invoices', 'GET', null, filters);
-  return apiListInvoices(filters);
-}
-
-// Unified: record-payment (thay thế apiRecordPayment + apiV1CreatePayment)
-export function apiRecordPaymentUnified(payload) {
-  if (USE_MYSQL) return smcRequest('record-payment', 'POST', payload);
-  return apiRecordPayment(payload);
-}
-
-// Unified: confirm-receipt (thay thế apiConfirmReceipt + apiV1ApprovePayment)
-export function apiConfirmReceiptUnified(payload) {
-  if (USE_MYSQL) return smcRequest('confirm-receipt', 'POST', payload);
-  return apiConfirmReceipt(payload);
-}
-
-// Unified: reject-receipt (thay thế apiRejectReceipt + apiV1RejectPayment)
-export function apiRejectReceiptUnified(payload) {
-  if (USE_MYSQL) return smcRequest('reject-receipt', 'POST', payload);
-  return apiRejectReceipt(payload);
-}
-
-// Unified: overall-report (thay thế apiGetOverallReport + apiV1RevenueReport)
-export function apiGetOverallReportUnified() {
-  if (USE_MYSQL) return smcRequest('get-overall-report');
-  return apiGetOverallReport();
-}
-
-// Unified: agency-report (thay thế apiGetAgencyReport + apiV1AgencyReport)
-export function apiGetAgencyReportUnified(agencyId = '') {
-  if (USE_MYSQL) return smcRequest('get-agency-report', 'GET', null, { agencyId });
-  return apiGetAgencyReport(agencyId);
-}
-
-// Unified: student-invoices (thay thế apiGetStudentInvoices + apiV1MyTuition)
-export function apiGetStudentInvoicesUnified(courseId = '') {
-  if (USE_MYSQL) return smcRequest('get-student-invoices', 'GET', null, { courseId });
-  return apiGetStudentInvoices(courseId);
-}
-
-// Unified: exam-eligibility (thay thế apiV1ExamEligibility)
-export async function apiExamEligibilityUnified() {
-  if (USE_MYSQL) return smcRequest('exam-eligibility');
-  return v1Request('GET', '/student-portal/exam-eligibility');
-}
-
-// Unified: generate-qr (thay thế apiV1GenerateQR)
-export function apiGenerateQRUnified(payload) {
-  if (USE_MYSQL) return smcRequest('generate-qr', 'POST', payload);
-  return apiV1GenerateQR(payload);
-}
-
-// Unified: submit-receipt (giữ nguyên nhưng route qua MySQL khi sẵn sàng)
-export function apiSubmitReceiptUnified(payload) {
-  if (USE_MYSQL) return smcRequest('submit-receipt', 'POST', payload);
-  return apiSubmitReceipt(payload);
-}
-
-// Unified: agency-students
-export function apiAgencyStudentsUnified(agencyId = '') {
-  if (USE_MYSQL) return smcRequest('agency-students', 'GET', null, { agencyId });
-  // Fallback: fetch từ agency.php
-  return fetch('/api/agency.php?action=my-students' + (agencyId ? '&agencyId=' + agencyId : ''), {
-    headers: { 'Authorization': `Bearer ${getAuthToken()}` },
-    credentials: 'include',
-  }).then(r => r.json());
-}
-
-// Unified: overall health
-export function apiHealthUnified() {
-  if (USE_MYSQL) return smcRequest('health');
-  return apiTuitionServiceHealth();
-}
+// ── Admin ──
+export function apiMarkExempt(studentId, courseId) { return smcRequest('mark-exempt', 'POST', { studentId, courseId }); }
+export function apiUnmarkExempt(studentId, courseId = '') { return smcRequest('unmark-exempt', 'POST', { studentId, courseId }); }
+export function apiExamEligibility() { return smcRequest('exam-eligibility'); }
+export function apiGenerateQR(payload) { return smcRequest('generate-qr', 'POST', payload); }
+export function apiTuitionServiceHealth() { return smcRequest('health'); }
+export function apiSyncAllTuitions() { return smcRequest('sync-all', 'POST'); }
+export function apiCleanupFreeAgencyInvoices() { return smcRequest('fix-non-agency-discounts', 'POST'); }
 
 // ═══════════════════════════════════════════════════════════════
 // LEGACY COMPATIBILITY — giữ lại để không break code cũ
 // ═══════════════════════════════════════════════════════════════
-// NOTE: Các hàm apiTuition* dưới đây đều gọi tuitionRequest() đã được định nghĩa ở trên
-// TUITION_API/2nd tuitionRequest bị comment để tránh duplicate
+// ── Legacy deprecated tuition actions (forward to smc-db.php) ──
 
 // @deprecated — use apiRecordPayment / apiCreateInvoice
 export function apiConfirmPayment(data) { return request('POST', '/admin/confirm-payment', data); }
@@ -782,6 +431,11 @@ export function apiUpdateTuitionStep(data) { return request('POST', '/admin/upda
 // Health
 export function apiHealth() {
   return request('GET', '/health');
+}
+
+// Sync version — polling đồng bộ liên tài khoản (trả version theo từng tài nguyên)
+export function apiGetSyncVersion() {
+  return request('GET', '/sync-version');
 }
 
 // Exam Results
@@ -899,13 +553,13 @@ export async function apiSyncAll() {
 // ── Event Bus: Đồng bộ tức thời giữa các trang ──
 const SMC_EVENT_PREFIX = 'smc_data_change_';
 
-export function emitDataChange(resource, detail = {}) {
+export function emitDataChange(resource, detail = {}, sourceOverride = null) {
   const event = new CustomEvent(SMC_EVENT_PREFIX + resource, {
-    detail: { ...detail, timestamp: Date.now(), source: window.location.pathname },
+    detail: { ...detail, timestamp: Date.now(), source: sourceOverride || window.location.pathname },
   });
   window.dispatchEvent(event);
   if (resource !== 'all') {
-    emitDataChange('all', { changed: resource, ...detail });
+    emitDataChange('all', { changed: resource, ...detail }, sourceOverride);
   }
 }
 
@@ -1082,47 +736,6 @@ export function apiV1DebtsReport() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v5: Quy trình 5 tầng — Staff confirm cash + Accountant endpoints
+// UPLOAD & IMPORT
 // ═══════════════════════════════════════════════════════════════
-
-// Staff xác nhận thu tiền mặt (BƯỚC 1 của quy trình 2 bước)
-export function apiStaffConfirmCashUnified(payload) {
-  if (USE_MYSQL) return smcRequest('staff-confirm-cash', 'POST', payload);
-  return tuiRequest('staff-confirm-cash', 'POST', payload);
-}
-
-// Staff xem sổ quỹ của mình (tổng tiền mặt đang giữ)
-export function apiStaffCashSummaryUnified(staffId = '') {
-  if (USE_MYSQL) return smcRequest('staff-cash-summary', 'GET', null, { staffId });
-  return { data: { totalHolding: 0, totalRemitted: 0, pendingCount: 0, pendingPayments: [] } };
-}
-
-// Accountant xem toàn bộ sổ quỹ tiền mặt tất cả nhân viên
-export function apiAccountantCashLedgerUnified(filters = {}) {
-  if (USE_MYSQL) return smcRequest('accountant-cash-ledger', 'GET', null, filters);
-  return { success: false, data: [], overview: {}, staffHoldings: [], total: 0 };
-}
-
-// Nhân viên bàn giao tiền mặt cho Kế toán
-export function apiRemitCashUnified(payload) {
-  if (USE_MYSQL) return smcRequest('remit-cash', 'POST', payload);
-  return tuiRequest('remit-cash', 'POST', payload);
-}
-
-// Kiểm tra MySQL đã sẵn sàng chưa
-export async function apiCheckMySQLReady() {
-  try {
-    const res = await fetch('/api/smc-db.php?action=check-mysql-ready', { credentials: 'include' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ready) {
-        enableMySQL();
-        console.debug('[SMC] MySQL activated:', data);
-      }
-      return data;
-    }
-  } catch (e) {
-    console.debug('[SMC] MySQL not ready, using JSON fallback');
-  }
-  return { ready: false };
-}
+export function testNewFunction() { return "NEW_CODE_2026"; }

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BookOpen, Shuffle, Clock, FileText, Download } from 'lucide-react';
+import { ArrowRight, BookOpen, Shuffle, Clock, FileText, Download, Layers } from 'lucide-react';
 import { MODULE_INFO, getTotalQuestionCount, ensureLoaded } from '../../data/questionBank';
 import { useState, useEffect } from 'react';
 
@@ -35,6 +35,37 @@ export default function StudentExamSets() {
         <p className="text-sm text-gray-500 mt-1">
           Ngân hàng <strong>{totalQuestions} câu</strong> từ 10 học phần — Phụ lục 2 UAV
         </p>
+      </div>
+
+      {/* Đề thi theo môn học */}
+      <div className="mb-8">
+        <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Layers className="w-5 h-5 text-emerald-600" />
+          Đề thi theo môn học
+          <span className="text-xs font-normal text-gray-400">— chọn môn để làm đề trắc nghiệm riêng</span>
+        </h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Object.entries(MODULE_INFO).map(([id, info]) => {
+            const minutes = Math.max(10, Math.round(info.questionCount * 1.2));
+            return (
+              <button
+                key={id}
+                onClick={() => navigate(`/student/luyen-thi/subject-${id}`)}
+                className="card p-5 text-left group cursor-pointer hover:border-emerald-300 hover:shadow-md transition-all"
+              >
+                <div className="flex items-start justify-between">
+                  <span className="text-3xl">{info.icon}</span>
+                  <span className="badge bg-emerald-50 text-emerald-700 text-xs uppercase font-semibold">{id}</span>
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-1 mt-2 group-hover:text-emerald-600">{info.name}</h3>
+                <p className="text-xs text-gray-500">{info.questionCount} câu • {minutes} phút</p>
+                <div className="flex items-center gap-1 text-sm text-emerald-600 font-medium mt-3 group-hover:gap-2 transition-all">
+                  Vào thi <ArrowRight className="w-4 h-4" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Module overview */}

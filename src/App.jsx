@@ -31,13 +31,11 @@ import AdminAgencies from './pages/admin/AdminAgencies';
 
 // Staff
 import StaffDashboard from './pages/staff/StaffDashboard';
-import StaffEnrollment from './pages/staff/StaffEnrollment';
 import StaffClasses from './pages/staff/StaffClasses';
 import StaffStudents from './pages/staff/StaffStudents';
 import StaffTeachers from './pages/staff/StaffTeachers';
 import StaffCertificates from './pages/staff/StaffCertificates';
 import StaffReports from './pages/staff/StaffReports';
-import StaffPayments from './pages/staff/StaffPayments';
 
 // Teacher
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
@@ -54,11 +52,11 @@ import TeacherSchedule from './pages/teacher/TeacherSchedule';
 import TeacherMaterials from './pages/teacher/TeacherMaterials';
 import StaffDocuments from './pages/staff/StaffDocuments';
 import StaffCourses from './pages/staff/StaffCourses';
-import StaffTuition from './pages/staff/StaffTuition';
 import StaffApprovals from './pages/staff/StaffApprovals';
 import StaffChangeRequests from './pages/staff/StaffChangeRequests';
 import StaffAgencies from './pages/staff/StaffAgencies';
 import StaffUserManager from './pages/staff/StaffUserManager';
+import StaffImportStudents from './pages/staff/StaffImportStudents';
 
 // Student
 import StudentDashboard from './pages/student/StudentDashboard';
@@ -148,12 +146,9 @@ function AppRoutes() {
       {/* Staff */}
       <Route path="/staff/*" element={<ProtectedByRole role="STAFF"><StaffLayout /></ProtectedByRole>}>
         <Route index element={<StaffDashboard />} />
-        <Route path="tuyen-sinh" element={<StaffEnrollment />} />
         <Route path="khoa-hoc" element={<StaffCourses />} />
-        <Route path="hoc-phi" element={<StaffTuition />} />
         <Route path="duyet-tai-khoan" element={<StaffApprovals />} />
         <Route path="doi-lop-bao-luu" element={<StaffChangeRequests />} />
-        <Route path="thanh-toan" element={<StaffPayments />} />
         <Route path="tai-lieu" element={<StaffDocuments />} />
         <Route path="lop-hoc" element={<StaffClasses />} />
         <Route path="hoc-vien" element={<StaffStudents />} />
@@ -161,6 +156,7 @@ function AppRoutes() {
         <Route path="chung-chi" element={<StaffCertificates />} />
         <Route path="dai-ly" element={<StaffAgencies />} />
         <Route path="hoc-vien-quan-ly" element={<StaffUserManager />} />
+        <Route path="nhap-hoc-vien" element={<StaffImportStudents />} />
         <Route path="bao-cao" element={<StaffReports />} />
         <Route path="tai-khoan" element={<ProfilePage embedded />} />
       </Route>
@@ -203,7 +199,7 @@ function AppRoutes() {
       <Route path="/agency/*" element={<ProtectedByRole role="AGENCY"><AgencyLayout /></ProtectedByRole>}>
         <Route index element={<AgencyDashboard />} />
         <Route path="hoc-vien" element={<AgencyStudents />} />
-        <Route path="nhap-hoc-vien" element={<AgencyImportStudents />} />
+        <Route path="nhap-hoc-vien" element={<Navigate to="/agency" replace />} />
         <Route path="bao-cao" element={<AgencyReport />} />
         <Route path="tai-khoan" element={<AgencyProfile />} />
       </Route>

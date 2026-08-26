@@ -1,14 +1,12 @@
 import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { apiSubmitRegistration } from '../data/api';
 import toast from 'react-hot-toast';
 import { FileText, Send, CheckCircle, Eye, EyeOff, Upload, Camera, X, ArrowRight, Paperclip } from 'lucide-react';
 
 const COURSES = [
-  { value: 'c001', label: 'Hạng A — VLOS (Cơ bản)' },
-  { value: 'c002', label: 'Hạng B — VLOS (Nâng cao)' },
-  { value: 'c003', label: 'Hạng B — BVLOS (Chuyên sâu)' },
+  { value: 'A', label: 'Hạng A — VLOS (Cơ bản) — 15.000.000đ' },
+  { value: 'B', label: 'Hạng B — BVLOS (Chuyên sâu) — 25.000.000đ' },
 ];
 
 const DOCUMENTS = [
@@ -39,7 +37,7 @@ export default function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    course: 'c001',
+    course: '',
   });
   const [docFiles, setDocFiles] = useState({});
   const [docPreviews, setDocPreviews] = useState({});
@@ -108,6 +106,10 @@ export default function RegisterPage() {
       toast.error('Vui lòng điền đầy đủ các trường bắt buộc (*)');
       return;
     }
+    if (!form.course) {
+      toast.error('Vui lòng chọn khóa học');
+      return;
+    }
     if (form.password !== form.confirmPassword) {
       toast.error('Mật khẩu xác nhận không khớp');
       return;
@@ -119,28 +121,12 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
-      const registeredUser = await register({
+      await register({
         fullName: form.fullName,
         email: form.email,
         phone: form.phone,
         password: form.password,
         courseId: form.course,
-      });
-      await apiSubmitRegistration({
-        userId: registeredUser?.id || '',
-        fullName: form.fullName,
-        nationality: form.nationality,
-        dob: form.dob,
-        gender: form.gender,
-        permanentAddress: form.permanentAddress,
-        currentAddress: form.currentAddress,
-        idNumber: form.idNumber,
-        idIssueDate: form.idIssueDate,
-        idIssuePlace: form.idIssuePlace,
-        phone: form.phone,
-        email: form.email,
-        course: form.course,
-        documents: Object.fromEntries(DOCUMENTS.map(d => [d.key, !!docFiles[d.key]])),
       });
       setSubmitted(true);
       toast.success('Đăng ký thành công!');
@@ -333,8 +319,11 @@ export default function RegisterPage() {
                 <input type="password" value={form.confirmPassword} onChange={e => updateField('confirmPassword', e.target.value)} className="input-field" placeholder="Nhập lại mật khẩu" required />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-[0.75rem] font-medium text-[#8E8E93] mb-1">Khóa học đăng ký</label>
-                <select value={form.course} onChange={e => updateField('course', e.target.value)} className="input-field">
+                <label className="block text-[0.75rem] font-medium text-[#8E8E93] mb-1">
+                  Khóa học đăng ký <span className="text-red-500">*</span>
+                </label>
+                <select value={form.course} onChange={e => updateField('course', e.target.value)} className="input-field" required>
+                  <option value="" disabled>— Chọn khóa học —</option>
                   {COURSES.map(c => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}

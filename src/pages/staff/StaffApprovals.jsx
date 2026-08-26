@@ -3,7 +3,8 @@ import {
   apiListInvoices, apiGetOverallReport,
   apiRecordPayment, apiConfirmReceipt, apiRejectReceipt,
   apiListTransactions, apiGetUsers, apiGetRegistrations,
-  apiProcessPayment, apiUpdateUser, apiGetCourses,
+  apiGetAgencies, apiProcessPayment, apiUpdateUser,
+  apiApproveStudentV2, apiListEnrollments, apiApproveEnrollment, apiRejectEnrollment,
   emitDataChange, onDataChange
 } from '../../data/api';
 import {
@@ -41,26 +42,42 @@ export default function StaffApprovals() {
   const [pendingTxns, setPendingTxns] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [registrations, setRegistrations] = useState([]);
+  const [agencies, setAgencies] = useState([]);
+  const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('accounts'); // default: tài khoản chờ duyệt
   const [expandedId, setExpandedId] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
+  const [rankModal, setRankModal] = useState(null);
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [invRes, txnRes, userRes, regRes] = await Promise.all([
-        apiListInvoices().catch(() => ({ data: [] })),
+      const [invRes, txnRes, userRes, regRes, enrRes, agencyRes] = await Promise.all([
+        apiListInvoices({ perPage: 100 }).catch(() => ({ data: [] })),
         apiListTransactions({ status: 'pending' }).catch(() => ({ data: [] })),
         apiGetUsers().catch(() => ({ users: [] })),
         apiGetRegistrations().catch(() => []),
+        apiListEnrollments().catch(() => ({ data: [] })),
+        apiGetAgencies().catch(() => []),
       ]);
       setAllInvoices(invRes?.data || []);
       setPendingTxns(txnRes?.data || []);
+      setAgencies(Array.isArray(agencyRes) ? agencyRes : (agencyRes?.data || []));
 
       const users = userRes?.users || userRes || [];
-      setPendingUsers(users.filter(u => u.role === 'STUDENT' && u.status === 'PENDING'));
+      const allEnrollments = enrRes?.data || [];
+
+      // Lọc bỏ user đã có enrollment (đã được duyệt bởi Nhân viên)
+      const enrolledUserIds = new Set(allEnrollments.map(e => e.student_id).filter(Boolean));
+      setPendingUsers(users.filter(u =>
+        u.role === 'STUDENT' && u.status === 'PENDING' && !enrolledUserIds.has(u.id)
+      ));
+      // Hồ sơ chờ Nhân viên duyệt (bước step='staff'): enrollment pending, chưa có approval_staff_by
+      setPendingEnrollments(allEnrollments.filter(e =>
+        (e.enrollment_status === 'pending' || e.status === 'pending') && !e.approval_staff_by
+      ));
       setRegistrations(Array.isArray(regRes) ? regRes : (regRes?.data || []));
     } catch (e) {
       toast.error('Không thể tải danh sách');
@@ -95,14 +112,27 @@ export default function StaffApprovals() {
     return reg;
   };
 
-  // ── Duyệt tài khoản PENDING → chuyển sang chờ thanh toán ──
-  const handleApproveAccount = async (user) => {
+  // ── Tên đại lý (nếu học viên do đại lý nhập) ──
+  const getAgencyName = (user) => {
+    const aid = user.agencyId ?? user.agency_id;
+    if (!aid) return null;
+    const sid = String(aid);
+    const agency = agencies.find(a => String(a.id) === sid);
+    return agency ? (agency.name || agency.agent_name || agency.agentName) : ('Đại lý #' + sid);
+  };
+
+  // ── Duyệt tài khoản PENDING → kích hoạt + tạo hồ sơ học phí theo Hạng thi, chuyển cho Kế toán ──
+  const handleApproveAccount = async (user, rank = '') => {
     try {
-      // Chỉ chuyển trạng thái PENDING → chờ thanh toán, KHÔNG kích hoạt ngay
-      // Kích hoạt chỉ xảy ra sau khi Admin duyệt cuối cùng trong quy trình 3 cấp
-      await apiUpdateUser(user.id, { status: 'PENDING_PAYMENT' });
-      toast.success(`Đã duyệt tài khoản ${user.fullName}! Chuyển sang chờ thanh toán.`);
+      const note = `Duyệt bởi Nhân viên - ${new Date().toLocaleDateString('vi-VN')}`;
+      const res = await apiApproveStudentV2(user.id, note, rank);
+      if (res?.needRank || res?.warning) {
+        toast.success(`Đã kích hoạt ${user.fullName}. ${res.warning || ''}`, { duration: 6000 });
+      } else {
+        toast.success(`Đã duyệt ${user.fullName} và tạo hồ sơ học phí! Chuyển cho Kế toán đối soát.`);
+      }
       emitDataChange('users', { action: 'approved_pending', userId: user.id });
+      emitDataChange('enrollments', { action: 'created', userId: user.id });
       emitDataChange('all', { changed: 'users' });
       await loadAll();
     } catch (err) {
@@ -125,6 +155,19 @@ export default function StaffApprovals() {
       await loadAll();
     } catch (err) {
       toast.error('Lỗi: ' + (err.message || 'Không thể từ chối tài khoản'));
+    }
+  };
+
+  // ── Duyệt hồ sơ (bước step='staff') → chuyển cho Kế toán ──
+  const handleApproveEnrollment = async (enr) => {
+    try {
+      await apiApproveEnrollment({ enrollmentId: enr.id, step: 'staff', note: 'Nhân viên duyệt hồ sơ' });
+      toast.success(`Đã duyệt hồ sơ ${enr.student_name || ''}! Chuyển cho Kế toán đối soát.`);
+      emitDataChange('enrollments', { action: 'staff_approved', enrollmentId: enr.id });
+      emitDataChange('all', { changed: 'enrollments' });
+      await loadAll();
+    } catch (err) {
+      toast.error('Lỗi: ' + (err.message || 'Không thể duyệt hồ sơ'));
     }
   };
 
@@ -180,6 +223,7 @@ export default function StaffApprovals() {
       <div className="flex gap-2 mb-4 flex-wrap">
         {[
           { key: 'accounts', label: `👤 Tài khoản chờ duyệt (${pendingUsers.length})` },
+          { key: 'pending-enr', label: `📋 Hồ sơ chờ duyệt (${pendingEnrollments.length})` },
           { key: 'pending-txn', label: `💰 Phiếu thu chờ duyệt (${pendingTxns.length})` },
           { key: 'all-invoices', label: `📋 Tất cả hóa đơn (${allInvoices.length})` },
         ].map(tab => (
@@ -202,6 +246,7 @@ export default function StaffApprovals() {
           )}
           {pendingUsers.map(user => {
             const reg = getRegistration(user);
+            const agencyName = getAgencyName(user);
             return (
               <div key={user.id} className="card p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -213,6 +258,7 @@ export default function StaffApprovals() {
                       <div>
                         <h3 className="font-bold text-gray-900">{user.fullName}</h3>
                         <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                          {agencyName && <span className="flex items-center gap-1 text-blue-700 font-medium bg-blue-50 px-1.5 py-0.5 rounded"><Building2 className="w-3 h-3" />Đại lý: {agencyName}</span>}
                           {user.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{user.email}</span>}
                           {user.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{user.phone}</span>}
                         </p>
@@ -281,7 +327,10 @@ export default function StaffApprovals() {
 
                   <div className="flex gap-2 sm:flex-col sm:min-w-[120px]">
                     <button
-                      onClick={() => handleApproveAccount(user)}
+                      onClick={() => {
+                        if (user.rank === 'A' || user.rank === 'B') handleApproveAccount(user, user.rank);
+                        else setRankModal(user);
+                      }}
                       className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle className="w-4 h-4" /> Duyệt
@@ -297,6 +346,47 @@ export default function StaffApprovals() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── TAB: Hồ sơ chờ duyệt (Nhân viên duyệt step='staff') ── */}
+      {activeTab === 'pending-enr' && (
+        <div className="space-y-3">
+          {pendingEnrollments.length === 0 && (
+            <div className="text-center py-12 text-gray-400 bg-white rounded-2xl">
+              <FileText className="w-12 h-12 mx-auto mb-3 text-green-300" />
+              <p className="text-lg font-medium">Không có hồ sơ chờ duyệt</p>
+              <p className="text-sm mt-1">Hồ sơ sẽ xuất hiện ở đây khi Đại lý nhập học viên có khóa học</p>
+            </div>
+          )}
+          {pendingEnrollments.map(enr => (
+            <div key={enr.id} className="card p-4 sm:p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                      {(enr.student_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-900">{enr.student_name || `Học viên #${enr.student_id}`}</h3>
+                      <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{enr.course_name || '—'}</span>
+                        <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{enr.enrollment_code || ''}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2 sm:min-w-[120px]">
+                  <button
+                    onClick={() => handleApproveEnrollment(enr)}
+                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Duyệt hồ sơ
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -367,6 +457,43 @@ export default function StaffApprovals() {
           </table>
         </div>
       )}
+
+      {/* ── Modal chọn Hạng thi (khi duyệt học viên chưa có hạng) ── */}
+      {rankModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setRankModal(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Chọn Hạng thi</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Học viên <span className="font-semibold">{rankModal.fullName}</span> chưa có Hạng thi. Chọn hạng để duyệt và tạo hồ sơ học phí:
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => { const u = rankModal; setRankModal(null); handleApproveAccount(u, 'A'); }}
+                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
+                >
+                  Hạng A — VLOS (15.000.000 ₫)
+                </button>
+                <button
+                  onClick={() => { const u = rankModal; setRankModal(null); handleApproveAccount(u, 'B'); }}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                >
+                  Hạng B — BVLOS (25.000.000 ₫)
+                </button>
+              </div>
+              <button
+                onClick={() => setRankModal(null)}
+                className="w-full px-4 py-2 text-gray-500 hover:text-gray-700 text-sm transition"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -51,6 +51,22 @@ export function getQuestionsByModule(moduleId) {
   return ALL_QUESTIONS.filter(q => q.module_id === moduleId);
 }
 
+/**
+ * Sinh đề thi trắc nghiệm theo môn học (module) — lấy toàn bộ câu hỏi
+ * của môn đó và xáo trộn thứ tự. Mỗi lần gọi tạo thứ tự câu khác nhau.
+ * @param {string} moduleId — mã môn (m1..m10)
+ * @param {number|null} numQuestions — số câu muốn lấy; mặc định null = lấy toàn bộ.
+ */
+export function getExamByModule(moduleId, numQuestions = null) {
+  const pool = ALL_QUESTIONS.filter(q => q.module_id === moduleId);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const count = numQuestions ? Math.min(numQuestions, pool.length) : pool.length;
+  return pool.slice(0, count);
+}
+
 export function getAllQuestions() {
   return ALL_QUESTIONS;
 }

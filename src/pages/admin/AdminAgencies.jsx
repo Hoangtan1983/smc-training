@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, Plus, Edit, Trash2, Search, X, Eye, Users as UsersIcon, Percent, Calendar, DollarSign } from 'lucide-react';
-import { apiGetAgencies, apiV1GetAgents, apiV1CreateAgent, apiV1GetAgentCommissions, apiV1SettleCommission } from '../../data/api';
+import { apiGetAgencies, apiV1GetAgents, apiV1CreateAgent, apiV1GetAgentCommissions, apiV1SettleCommission, onDataChange } from '../../data/api';
 import toast from 'react-hot-toast';
 
 const formatPrice = (p) => {
@@ -78,6 +78,14 @@ export default function AdminAgencies() {
   };
 
   useEffect(() => { fetchAgencies(); }, []);
+
+  // Đồng bộ realtime khi học viên/hóa đơn/giao dịch đổi (ảnh hưởng số HV + hoa hồng)
+  useEffect(() => {
+    const u1 = onDataChange('all', (d) => {
+      if (['users', 'enrollments', 'invoices', 'transactions'].includes(d?.changed)) fetchAgencies();
+    });
+    return () => u1();
+  }, []);
 
   // Reset month when opening detail
   useEffect(() => {
@@ -236,7 +244,7 @@ export default function AdminAgencies() {
     code: a.agent_code || a.code || '',
     status: a.status || 'active',
     studentCount: a.student_count || a.studentCount || 0,
-    discountPercent: a.commission_rate || a.discountPercent || 0,
+    discountPercent: parseFloat(a.commission_rate || a.discountPercent || 0),
     contactPerson: a.contact_person || a.contactPerson || '',
     email: a.email || '',
     phone: a.phone || '',

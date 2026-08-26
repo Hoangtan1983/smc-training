@@ -89,7 +89,7 @@ export default function AdminTuition() {
     setLoading(true);
     try {
       const [invRes, repRes, courseData, userData, agencyData, classData, healthData] = await Promise.all([
-        apiListInvoices().catch(() => ({ data: [] })),
+        apiListInvoices({ perPage: 100 }).catch(() => ({ data: [] })),
         apiGetOverallReport().catch(() => ({ data: {} })),
         apiGetCourses().catch(() => []),
         apiGetUsers().catch(() => ({ users: [] })),
@@ -301,7 +301,7 @@ export default function AdminTuition() {
     const studentName = invoice.studentName || 'học viên này';
     if (!window.confirm(`🔄 Bỏ đánh dấu miễn phí cho "${studentName}"?\n\n- Invoice sẽ chuyển về trạng thái "Chưa thanh toán"\n- Học phí sẽ được khôi phục\n\n⚠️ Học viên sẽ cần đóng học phí bình thường.`)) return;
     try {
-      const res = await apiUnmarkExempt(invoice.studentId);
+      const res = await apiUnmarkExempt(invoice.studentId, invoice.courseId || '');
       toast.success(res.message || 'Đã bỏ miễn phí!');
       emitDataChange('invoices', { action: 'unmark_exempt' });
       await loadData();
@@ -981,7 +981,7 @@ export default function AdminTuition() {
             <div className="p-6">
               {/* Invoice info */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-                <div><span className="text-xs text-gray-500">Mã hóa đơn</span><p className="font-mono font-bold text-sm truncate">{selectedInvoice.id?.substring(0, 16)}...</p></div>
+                <div><span className="text-xs text-gray-500">Mã hóa đơn</span><p className="font-mono font-bold text-sm truncate">{String(selectedInvoice.id ?? '').substring(0, 16)}...</p></div>
                 <div><span className="text-xs text-gray-500">Trạng thái</span><p><span className={`badge text-xs ${(STATUS_MAP[selectedInvoice.status] || STATUS_MAP.pending).color}`}>{(STATUS_MAP[selectedInvoice.status] || STATUS_MAP.pending).label}</span></p></div>
                 <div><span className="text-xs text-gray-500">Học viên</span><p className="font-semibold text-sm">{selectedInvoice.studentName}</p></div>
                 <div><span className="text-xs text-gray-500">Hạng</span><p><span className={`badge text-xs font-bold ${selectedInvoice.studentRank === 'A' ? 'bg-blue-100 text-blue-700' : selectedInvoice.studentRank === 'B' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>{selectedInvoice.studentRank === 'A' ? 'VLOS' : selectedInvoice.studentRank === 'B' ? 'BVLOS' : '—'}</span></p></div>

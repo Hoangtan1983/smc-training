@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetClasses, apiGetCourses, apiGetEnrollments } from '../../data/api';
+import { apiGetClasses, apiGetCourses, apiGetEnrollments, onDataChange } from '../../data/api';
 import { School, Users, Calendar, MapPin, Clock } from 'lucide-react';
 
 export default function StudentClasses() {
@@ -11,52 +11,60 @@ export default function StudentClasses() {
   const [loading, setLoading] = useState(true);
   const { getAllUsers } = useAuth();
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user?.id) return;
-      try {
-        const [allClasses, coursesData, enrollmentsData] = await Promise.all([
-          apiGetClasses().catch(() => []),
-          apiGetCourses().catch(() => []),
-          apiGetEnrollments().catch(() => []),
-        ]);
-        const classes = Array.isArray(allClasses) ? allClasses : [];
-        const courses = Array.isArray(coursesData) ? coursesData : [];
-        const enrollments = Array.isArray(enrollmentsData) ? enrollmentsData : [];
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [allClasses, coursesData, enrollmentsData] = await Promise.all([
+        apiGetClasses().catch(() => []),
+        apiGetCourses().catch(() => []),
+        apiGetEnrollments().catch(() => []),
+      ]);
+      const classes = Array.isArray(allClasses) ? allClasses : [];
+      const courses = Array.isArray(coursesData) ? coursesData : [];
+      const enrollments = Array.isArray(enrollmentsData) ? enrollmentsData : [];
 
-        // Tìm enrollment của học viên này
-        const myEnr = enrollments.find(e => e.student_id === user.id);
-        const classId = myEnr?.class_id || '';
+      // Tìm enrollment của học viên này
+      const myEnr = enrollments.find(e => e.student_id === user.id);
+      const classId = myEnr?.class_id || '';
 
-        // Tìm lớp: ưu tiên enrollment.class_id > student_ids trong class
-        let foundClass = null;
-        if (classId) {
-          foundClass = classes.find(c => c.id === classId);
-        }
-        if (!foundClass) {
-          foundClass = classes.find(c => (c.student_ids || []).includes(user.id)) || null;
-        }
-        setMyClass(foundClass || null);
-
-        if (foundClass) {
-          const foundCourse = courses.find(c => c.id === foundClass.course_id);
-          setCourse(foundCourse || null);
-        }
-
-        // Load teachers
-        getAllUsers().then(data => {
-          const allTeachers = data.filter(u => u.role === 'TEACHER');
-          if (foundClass) {
-            setTeachers(allTeachers.filter(t => (foundClass.teacher_ids || []).includes(t.id)));
-          }
-        });
-      } catch (e) {
-        console.error('Lỗi tải lớp học:', e);
+      // Tìm lớp: ưu tiên enrollment.class_id > student_ids trong class
+      let foundClass = null;
+      if (classId) {
+        foundClass = classes.find(c => c.id === classId);
       }
-      setLoading(false);
-    };
-    load();
-  }, [user?.id]);
+      if (!foundClass) {
+        foundClass = classes.find(c => (c.student_ids || []).includes(user.id)) || null;
+      }
+      setMyClass(foundClass || null);
+
+      if (foundClass) {
+        const foundCourse = courses.find(c => c.id === foundClass.course_id);
+        setCourse(foundCourse || null);
+      }
+
+      // Load teachers
+      getAllUsers().then(data => {
+        const allTeachers = data.filter(u => u.role === 'TEACHER');
+        if (foundClass) {
+          setTeachers(allTeachers.filter(t => (foundClass.teacher_ids || []).includes(t.id)));
+        }
+      });
+    } catch (e) {
+      console.error('Lỗi tải lớp học:', e);
+    }
+    setLoading(false);
+  }, [user?.id, getAllUsers]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Đồng bộ liên tài khoản: refetch khi lớp/khoá/enrollment/user thay đổi
+  useEffect(() => {
+    const unsub1 = onDataChange('classes', () => load());
+    const unsub2 = onDataChange('all', (detail) => {
+      if (['classes', 'courses', 'enrollments', 'users'].includes(detail?.changed)) load();
+    });
+    return () => { unsub1(); unsub2(); };
+  }, [load]);
 
   if (loading) return <div className="text-center py-12"><div className="spinner mx-auto mb-4" /><p className="text-gray-500">Đang tải...</p></div>;
 

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetCourses, apiGetClasses } from '../../data/api';
+import { apiGetCourses, apiGetClasses, onDataChange } from '../../data/api';
 import { loadData } from '../../data/store';
 import { Users, BookOpen, School, Award, TrendingUp } from 'lucide-react';
 
@@ -11,7 +11,7 @@ export default function AdminDashboard() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     Promise.all([
       getAllUsers(),
       apiGetCourses().catch(() => []),
@@ -22,7 +22,16 @@ export default function AdminDashboard() {
       setClasses(Array.isArray(classesData) ? classesData : []);
       setLoading(false);
     });
-  }, []);
+  }, [getAllUsers]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('courses', () => load());
+    const unsub2 = onDataChange('all', (d) => { if (['courses', 'classes', 'users'].includes(d?.changed)) load(); });
+    return () => { unsub1(); unsub2(); };
+  }, [load]);
 
   const certs = loadData('certifications', []);
 

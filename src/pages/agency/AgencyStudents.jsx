@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Search, Filter, Download } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Filter, Download, Edit3, X, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExpandableDataTable from '../../components/ExpandableDataTable';
-import { apiGetCourses, apiGetAgencyReport } from '../../data/api';
+import { apiGetCourses, apiGetAgencyReport, onDataChange } from '../../data/api';
 
 export default function AgencyStudents() {
   const [students, setStudents] = useState([]);
@@ -10,12 +10,15 @@ export default function AgencyStudents() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [editingStudent, setEditingStudent] = useState(null);
+  const [editForm, setEditForm] = useState({ phone: '', email: '' });
+  const [saving, setSaving] = useState(false);
 
   const token = localStorage.getItem('smc-token');
 
   // ĐÃ THỐNG NHẤT: Dùng apiGetAgencyReport (v3) thay vì fetch trực tiếp agency.php
   // Tất cả data từ invoices.json — cùng nguồn với AgencyDashboard
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [reportRes, coursesData] = await Promise.all([
         apiGetAgencyReport(),
@@ -62,9 +65,16 @@ export default function AgencyStudents() {
       toast.error('Không thể tải danh sách học viên: ' + (err.message || ''));
     }
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('enrollments', () => fetchData());
+    const unsub2 = onDataChange('all', (d) => { if (['courses', 'enrollments', 'tuitions', 'invoices'].includes(d?.changed)) fetchData(); });
+    return () => { unsub1(); unsub2(); };
+  }, [fetchData]);
 
   // Build course name map từ API
   const getCourseName = (courseId) => {
@@ -235,6 +245,43 @@ export default function AgencyStudents() {
     </div>
   );
 
+  // ── Cập nhật SĐT/email học viên ──
+  const openEdit = (student) => {
+    setEditingStudent(student);
+    setEditForm({ phone: student.phone || '', email: student.email || '' });
+  };
+
+  const handleSave = async () => {
+    if (!editingStudent) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/agency.php?action=update-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ studentId: editingStudent.id, phone: editForm.phone.trim(), email: editForm.email.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      toast.success('Đã cập nhật thông tin học viên');
+      setEditingStudent(null);
+      fetchData();
+    } catch (e) {
+      toast.error(e.message || 'Lỗi cập nhật');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const studentActions = (student) => (
+    <button
+      onClick={() => openEdit(student)}
+      className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg"
+      title="Cập nhật SĐT/Email"
+    >
+      <Edit3 className="w-4 h-4" />
+    </button>
+  );
+
   // ── Error boundary fallback ──
   if (loading) {
     return (
@@ -306,19 +353,70 @@ export default function AgencyStudents() {
       </div>
 
       {/* Students table wrapped in try-catch via Error Boundary pattern */}
-      <StudentTable students={filtered} columns={columns} renderExpanded={renderExpanded} />
+      <StudentTable students={filtered} columns={columns} renderExpanded={renderExpanded} actions={studentActions} />
+
+      {/* ── Modal cập nhật SĐT/Email ── */}
+      {editingStudent && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditingStudent(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Cập nhật thông tin học viên</h3>
+              <button onClick={() => setEditingStudent(null)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-900">{editingStudent.fullName || editingStudent.studentName}</p>
+                <p className="text-xs text-gray-500">Mã: {editingStudent.id}</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Số điện thoại</label>
+                <input
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={e => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="input-field"
+                  placeholder="Nhập số điện thoại"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1.5">Email</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                  className="input-field"
+                  placeholder="Nhập email"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditingStudent(null)} className="btn-ghost flex-1">Hủy</button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
+                  Lưu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // Separate component to catch rendering errors
-function StudentTable({ students, columns, renderExpanded }) {
+function StudentTable({ students, columns, renderExpanded, actions }) {
   try {
     return (
       <ExpandableDataTable
         columns={columns}
         data={students}
         renderExpanded={renderExpanded}
+        actions={actions}
         emptyText="Chưa có học viên nào"
       />
     );

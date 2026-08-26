@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { genId } from '../../data/store';
-import { apiGetCourses, apiCreateCourse, apiUpdateCourse, apiDeleteCourse, apiGetClasses } from '../../data/api';
+import { apiGetCourses, apiCreateCourse, apiUpdateCourse, apiDeleteCourse, apiGetClasses, onDataChange } from '../../data/api';
 import { Plus, Edit3, Trash2, X, Search, BookOpen, School, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -13,7 +13,7 @@ export default function AdminCourses() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ name: '', code: '', total_hours_theory: 0, total_hours_practice: 0, min_fly_hours: 20, tuition_fee: 0, rank: 'A', status: 'active' });
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     try {
       const [courseData, classData] = await Promise.all([
         apiGetCourses(),
@@ -25,9 +25,16 @@ export default function AdminCourses() {
       toast.error('Không thể tải dữ liệu từ server');
     }
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('courses', () => loadAll());
+    const unsub2 = onDataChange('all', (d) => { if (['courses', 'classes'].includes(d?.changed)) loadAll(); });
+    return () => { unsub1(); unsub2(); };
+  }, [loadAll]);
 
   // Lấy danh sách lớp thuộc 1 khóa học
   const getClassesForCourse = (courseId) => classes.filter(c => c.course_id === courseId);
@@ -35,7 +42,7 @@ export default function AdminCourses() {
   const filtered = courses.filter(c => (c.name || '').toLowerCase().includes(search.toLowerCase()));
 
   const openCreate = () => { setEditing(null); setForm({ name: '', code: '', total_hours_theory: 0, total_hours_practice: 0, min_fly_hours: 20, tuition_fee: 0, rank: 'A', status: 'active' }); setShowModal(true); };
-  const openEdit = c => { setEditing(c); setForm({ ...c }); setShowModal(true); };
+  const openEdit = c => { setEditing(c); setForm({ ...c, tuition_fee: c.tuition_fee ?? c.price ?? 0 }); setShowModal(true); };
 
   const handleSubmit = async e => {
     e.preventDefault();

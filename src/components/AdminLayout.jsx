@@ -1,5 +1,5 @@
 import SidebarLayout from './SidebarLayout';
-import { Shield, BookOpen, School, Users, GraduationCap, Award, FileText, BarChart3, Settings, UserCog, DollarSign, UserCircle, Building2 } from 'lucide-react';
+import { Shield, BookOpen, School, Users, GraduationCap, Award, FileText, BarChart3, Settings, UserCog, DollarSign, UserCircle, Building2, FileCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function AdminLayout() {
@@ -11,6 +11,7 @@ export default function AdminLayout() {
       iconColor="text-purple-400"
       links={[
         { to: '/admin', label: 'Tổng quan', icon: BarChart3 },
+        { to: '/admin/tuyen-sinh', label: 'Tuyển sinh', icon: FileCheck },
         { to: '/admin/nguoi-dung', label: 'Người dùng', icon: UserCog },
         { to: '/admin/khoa-hoc', label: 'Khóa học', icon: BookOpen },
         { to: '/admin/lop-hoc', label: 'Lớp học', icon: School },

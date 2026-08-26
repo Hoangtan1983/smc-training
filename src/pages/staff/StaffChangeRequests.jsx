@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiGetChangeRequests, apiCreateChangeRequest, apiGetUsers, apiGetClasses } from '../../data/api';
+import { apiGetChangeRequests, apiCreateChangeRequest, apiGetUsers, apiGetClasses, onDataChange } from '../../data/api';
 import { ArrowLeftRight, Ban, Wallet, Search, RefreshCw, Plus, X, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,9 +21,7 @@ export default function StaffChangeRequests() {
     studentId: '', type: 'change_class', fromClassId: '', toClassId: '', reason: '', amount: 0,
   });
 
-  useEffect(() => { loadData_(); }, []);
-
-  const loadData_ = async () => {
+  const loadData_ = useCallback(async () => {
     try {
       const [reqData, userData, classData] = await Promise.all([
         apiGetChangeRequests().catch(() => []),
@@ -39,10 +37,25 @@ export default function StaffChangeRequests() {
       console.error('Lỗi tải dữ liệu:', e);
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => { loadData_(); }, [loadData_]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('change-requests', () => loadData_());
+    const unsub2 = onDataChange('all', (d) => { if (['change-requests', 'classes', 'users'].includes(d?.changed)) loadData_(); });
+    return () => { unsub1(); unsub2(); };
+  }, [loadData_]);
 
   const getStudent = (id) => allStudents.find(s => s.id === id);
   const getClass = (id) => allClasses.find(c => c.id === id);
+
+  // Lớp đã xếp của học viên (tra theo classes.student_ids, ép kiểu String để khớp mọi dạng id)
+  const getStudentClassName = (studentId) => {
+    const cls = allClasses.find(c => (c.student_ids || []).some(sid => String(sid) === String(studentId)));
+    return cls ? cls.name : '';
+  };
 
   // ─── Tạo yêu cầu (staff tạo, admin duyệt) ───
   const handleCreateRequest = async (e) => {
@@ -282,11 +295,15 @@ export default function StaffChangeRequests() {
                         (s.phone || '').includes(kw)
                       );
                     })
-                    .map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.fullName} — {s.phone || s.email} {s.rank ? `[Hạng ${s.rank}]` : ''}
-                      </option>
-                    ))}
+                    .map(s => {
+                      const className = getStudentClassName(s.id);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.fullName} — {s.phone || s.email} {s.rank ? `[Hạng ${s.rank}]` : ''}
+                          {className ? ` — Lớp: ${className}` : ' — Chưa xếp lớp'}
+                        </option>
+                      );
+                    })}
                 </select>
                 {form.studentId && (
                   <p className="text-xs text-blue-600 mt-1">

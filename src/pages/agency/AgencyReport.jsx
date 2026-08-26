@@ -41,16 +41,29 @@ export default function AgencyReport() {
   const courseStudents = {};
   invoices.forEach(inv => {
     const courseName = inv.courseName || 'Chưa xác định';
-    // Xác định hạng: VLOS hay BVLOS dựa vào tên khóa học
+    // Xác định hạng: VLOS (A) hay BVLOS (B)
+    // Ưu tiên: courseId → basePrice → courseName string match
     let group = courseName;
     const cn = (courseName || '').toLowerCase();
-    if (cn.includes('bvlos') || cn.includes('hạng b')) group = 'BVLOS (Hạng B)';
+    const cid = inv.courseId || '';
+    const bp = inv.basePrice || 0;
+
+    // 1. CourseId lookup (chính xác nhất)
+    const VLOS_COURSE_IDS = ['c-8468783fde8fa5a4']; // SMC-VLOSK1
+    const BVLOS_COURSE_IDS = ['c-966aaa6eca2d1a07', 'c-980eba3db04f6526']; // SMC-BVLOSK1, SMC-BVLOSK2
+
+    if (VLOS_COURSE_IDS.includes(cid)) group = 'VLOS (Hạng A)';
+    else if (BVLOS_COURSE_IDS.includes(cid)) group = 'BVLOS (Hạng B)';
+    // 2. BasePrice lookup (15M = Hạng A, 25M = Hạng B)
+    else if (bp === 15000000) group = 'VLOS (Hạng A)';
+    else if (bp === 25000000) group = 'BVLOS (Hạng B)';
+    // 3. Fallback: string matching on courseName
+    else if (cn.includes('bvlos') || cn.includes('hạng b')) group = 'BVLOS (Hạng B)';
     else if (cn.includes('vlos') || cn.includes('hạng a')) group = 'VLOS (Hạng A)';
 
     if (!byCourse[group]) byCourse[group] = { name: group, students: 0, received: 0, discount: 0, paidToSmc: 0 };
     if (!courseStudents[group]) courseStudents[group] = new Set();
 
-    const bp = inv.basePrice || 0;
     const paid = inv.totalPaid || 0;
     const discAmt = inv.agencyDiscountAmount || 0;
     const owesSmc = inv.owesToSmc || 0;

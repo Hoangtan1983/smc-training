@@ -76,12 +76,12 @@ export default function AdminReports() {
       setAgency((oData.by_agency || agData.invoices || []).map(a => ({
         agent_code: a.name || '',
         agent_name: a.name || '',
-        commission_rate: a.discountPercent || 0,
+        commission_rate: a.discount_percent || 0,
         student_count: a.students || a.invoices || 0,
         total_collected: a.received || 0,
-        commission_earned: a.discountTotal || 0,
+        commission_earned: a.discount_total || 0,
         unsettled: 0,
-        settled: a.discountTotal || 0,
+        settled: a.discount_total || 0,
       })));
 
       // Debts: từ by_course (tương đương)

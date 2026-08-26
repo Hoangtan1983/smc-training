@@ -41,7 +41,11 @@ export default function StaffDashboard() {
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  const pending = enrollments.filter(e => e.stages?.enrollment?.status === 'pending' || e.status === 'pending');
+  // "Hồ sơ chờ duyệt" = hồ sơ chờ NHÂN VIÊN duyệt (chưa có approval_staff_by), thống nhất với StaffApprovals.
+  // Hồ sơ đã qua Nhân viên (đang chờ Kế toán/Admin) KHÔNG tính vào đây.
+  const pending = enrollments.filter(e =>
+    !e.approval_staff_by && (e.enrollment_status === 'pending' || e.status === 'pending')
+  );
 
   return (
     <div className="space-y-6">

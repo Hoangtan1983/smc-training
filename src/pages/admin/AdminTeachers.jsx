@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { GraduationCap, Edit3, Trash2, Plus, X, Check, School, Users, Mail, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExpandableDataTable from '../../components/ExpandableDataTable';
+import { onDataChange } from '../../data/api';
 
 export default function AdminTeachers() {
   const { getAllUsers, createUser, updateUser, deleteUser } = useAuth();
@@ -12,9 +13,7 @@ export default function AdminTeachers() {
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '' });
 
-  useEffect(() => { loadAll(); }, []);
-
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     const data = await getAllUsers();
     setUsers(data.filter(u => u.role === 'TEACHER'));
     try {
@@ -22,7 +21,16 @@ export default function AdminTeachers() {
       const clsData = await apiGetClasses().catch(() => []);
       setClasses(Array.isArray(clsData) ? clsData : []);
     } catch { setClasses([]); }
-  };
+  }, [getAllUsers]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Đồng bộ liên tài khoản
+  useEffect(() => {
+    const unsub1 = onDataChange('classes', () => loadAll());
+    const unsub2 = onDataChange('all', (d) => { if (['classes', 'users'].includes(d?.changed)) loadAll(); });
+    return () => { unsub1(); unsub2(); };
+  }, [loadAll]);
 
   const getTeacherClasses = (teacherId) => classes.filter(c => (c.teacher_ids || []).includes(teacherId));
   const getStudentCount = (teacherId) => getTeacherClasses(teacherId).reduce((sum, c) => sum + (c.student_ids || []).length, 0);

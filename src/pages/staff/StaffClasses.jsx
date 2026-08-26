@@ -201,8 +201,9 @@ export default function StaffClasses() {
     });
 
     return allStudents.filter(s => {
-      const t = tuitions.find(x => x.studentId === s.id);
-      if (!(s.status === 'ACTIVE' && t && (t.status === 'paid' || t.step === 'active' || t.step === 'enrolled' || t.step === 'assigned'))) return false;
+      // Chỉ cần học viên đã được kích hoạt (ACTIVE) là đủ điều kiện xếp lớp;
+      // không bắt buộc đóng đủ học phí (nộp một phần / miễn giảm / chưa có hồ sơ vẫn xếp lớp được).
+      if (s.status !== 'ACTIVE') return false;
 
       // Loại bỏ học viên đã được xếp vào lớp (bất kỳ lớp nào)
       if (studentsInAnyClass.has(s.id)) return false;
@@ -441,7 +442,7 @@ export default function StaffClasses() {
                 <select value={form.course_id} onChange={e => setForm({ ...form, course_id: e.target.value })}
                   className="input-field" required>
                   <option value="">Chọn khóa học...</option>
-                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {courses.filter(c => c.status === 'active').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 {/* Hiển thị các lớp hiện có cùng khóa đang chọn */}
                 {form.course_id && (() => {

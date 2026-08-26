@@ -99,7 +99,7 @@ export default function StaffTuition() {
     setLoading(true);
     try {
       const [invRes, repRes, courseData, userData, agencyData, classData] = await Promise.all([
-        apiListInvoices().catch(() => ({ data: [] })),
+        apiListInvoices({ perPage: 100 }).catch(() => ({ data: [] })),
         apiGetOverallReport().catch(() => ({ data: {} })),
         apiGetCourses().catch(() => []),
         apiGetUsers().catch(() => ({ users: [] })),
@@ -789,7 +789,7 @@ export default function StaffTuition() {
             <div className="p-6 border-b sticky top-0 bg-white z-10 flex justify-between"><h3 className="text-lg font-extrabold">🧾 Chi tiết Hóa đơn</h3><button onClick={() => setShowDetail(false)} className="btn-ghost p-2">✕</button></div>
             <div className="p-6">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-                <div><span className="text-xs text-gray-500">Mã hóa đơn</span><p className="font-mono font-bold text-sm truncate">{selectedInvoice.id?.substring(0, 16)}...</p></div>
+                <div><span className="text-xs text-gray-500">Mã hóa đơn</span><p className="font-mono font-bold text-sm truncate">{String(selectedInvoice.id ?? '').substring(0, 16)}...</p></div>
                 <div><span className="text-xs text-gray-500">Trạng thái</span><p><span className={`badge text-xs ${(STATUS_MAP[selectedInvoice.status] || STATUS_MAP.pending).color}`}>{(STATUS_MAP[selectedInvoice.status] || STATUS_MAP.pending).label}</span></p></div>
                 <div><span className="text-xs text-gray-500">Học viên</span><p className="font-semibold text-sm">{selectedInvoice.studentName}</p></div>
                 <div><span className="text-xs text-gray-500">Hạng</span><p><span className={`badge text-xs font-bold ${selectedInvoice.studentRank === 'A' ? 'bg-blue-100 text-blue-700' : selectedInvoice.studentRank === 'B' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>{selectedInvoice.studentRank === 'A' ? 'VLOS' : selectedInvoice.studentRank === 'B' ? 'BVLOS' : '—'}</span></p></div>

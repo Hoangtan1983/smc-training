@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { apiCreateUser, apiUpdateUser, apiDeleteUser, apiGetUsers, apiGetCourses, apiGetClasses, apiAssignClass, emitDataChange, onDataChange } from '../../data/api';
-import { Users, Search, Plus, Edit3, Trash2, X, Check, UserPlus, Upload, Download, FileSpreadsheet, FileDown, School, GraduationCap, Phone, Mail, Building2 } from 'lucide-react';
+import { apiCreateUser, apiUpdateUser, apiDeleteUser, apiGetUsers, apiGetCourses, apiGetClasses, apiGetEnrollments, apiGetTuitions, apiListInvoices, apiAssignClass, emitDataChange, onDataChange } from '../../data/api';
+import { Users, Search, Plus, Edit3, Trash2, X, Check, UserPlus, Upload, Download, FileSpreadsheet, FileDown, School, GraduationCap, Phone, Mail, Building2, Layers, CreditCard, CheckCircle, Clock } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import toast from 'react-hot-toast';
 import ExpandableDataTable from '../../components/ExpandableDataTable';
+
+const RANK_LABELS = { A: 'VLOS (Hạng A)', B: 'BVLOS (Hạng B)' };
+const RANK_COLORS = { A: 'bg-blue-100 text-blue-700', B: 'bg-purple-100 text-purple-700' };
 
 export default function StaffStudents() {
   const { user, getAllUsers, createUser, updateUser, deleteUser } = useAuth();
@@ -13,6 +16,8 @@ export default function StaffStudents() {
   const [teachers, setTeachers] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
+  const [tuitions, setTuitions] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [agencies, setAgencies] = useState([]);
   const [showAgencyModal, setShowAgencyModal] = useState(null);
@@ -31,7 +36,7 @@ export default function StaffStudents() {
   useEffect(() => { return onDataChange('users', () => { refresh(); }); }, []);
   useEffect(() => {
     return onDataChange('all', (detail) => {
-      if (detail?.changed === 'users' || detail?.changed === 'classes' || detail?.changed === 'enrollments' || detail?.changed === 'tuitions') { refresh(); }
+      if (detail?.changed === 'users' || detail?.changed === 'classes' || detail?.changed === 'enrollments' || detail?.changed === 'tuitions' || detail?.changed === 'invoices') { refresh(); }
     });
   }, []);
 
@@ -43,17 +48,33 @@ export default function StaffStudents() {
     setTeachers(userData.filter(u => u.role === 'TEACHER'));
     setClasses(Array.isArray(classData) ? classData : []);
     setCourses(Array.isArray(courseData) ? courseData : []);
+
+    // Enrollments
     try {
-      const { apiGetEnrollments } = await import('../../data/api');
       const enrData = await apiGetEnrollments().catch(() => []);
       setEnrollments(Array.isArray(enrData) ? enrData : []);
     } catch { setEnrollments([]); }
+
+    // Tuitions (đồng bộ học phí)
+    try {
+      const tData = await apiGetTuitions().catch(() => []);
+      setTuitions(Array.isArray(tData) ? tData : []);
+    } catch { setTuitions([]); }
+
+    // Invoices
+    try {
+      const invData = await apiListInvoices({ perPage: 100 }).catch(() => ({ data: [] }));
+      setInvoices(Array.isArray(invData?.data) ? invData.data : (Array.isArray(invData) ? invData : []));
+    } catch { setInvoices([]); }
+
+    // Registrations
     try {
       const { apiGetRegistrations } = await import('../../data/api');
       const regData = await apiGetRegistrations().catch(() => []);
       setRegistrations(Array.isArray(regData) ? regData : []);
     } catch { setRegistrations([]); }
-    // Load agencies
+
+    // Agencies
     try {
       const token = localStorage.getItem('smc-token');
       const res = await fetch('/api/agency.php?action=list', {
@@ -66,59 +87,90 @@ export default function StaffStudents() {
 
   const refresh = async () => { await loadAll(); };
 
-  const getStudentClass = (studentId) => {
-    const enr = enrollments.find(e => e.student_id === studentId);
-    // Ưu tiên enrollment.class_id
-    if (enr?.class_id) {
-      return classes.find(c => c.id === enr.class_id) || null;
-    }
-    // Fallback: kiểm tra trong class.student_ids
-    const cls = classes.find(c => (c.student_ids || []).includes(studentId));
-    return cls || null;
-  };
+  // ── Helpers (đồng bộ từ users + tuitions + enrollments + invoices) ──
+  const getEnrollment = studentId => enrollments.find(e => (e.studentId || e.student_id) === studentId);
+  const getTuition = studentId => tuitions.find(t => t.studentId === studentId);
+  const getInvoice = studentId => invoices.find(inv => (inv.studentId || inv.student_id) === studentId);
 
-  const getClassTeachers = (cls) => {
-    if (!cls || !cls.teacher_ids || cls.teacher_ids.length === 0) return '—';
-    return cls.teacher_ids.map(tid => teachers.find(t => t.id === tid)?.fullName || tid).join(', ');
+  const getStudentClass = (studentId) => {
+    const enr = getEnrollment(studentId);
+    const cid = enr?.classId || enr?.class_id;
+    if (cid) return classes.find(c => c.id === cid) || null;
+    const t = getTuition(studentId);
+    if (t?.classId) return classes.find(c => c.id === t.classId) || null;
+    return classes.find(c => (c.student_ids || []).includes(studentId)) || null;
   };
 
   const getStudentRank = (studentId) => {
     const s = students.find(st => st.id === studentId);
     if (!s) return '—';
+    // Ưu tiên user.rank
     if (s.rank === 'A' || s.rank === 'B') return s.rank;
+    // Từ tuition
+    const t = getTuition(studentId);
+    if (t?.courseName) {
+      if (t.courseName.includes('BVLOS') || t.courseName.includes('Hạng B')) return 'B';
+      if (t.courseName.includes('VLOS') || t.courseName.includes('Hạng A')) return 'A';
+    }
+    // Từ class
+    const cls = getStudentClass(studentId);
+    if (cls?.rank) return cls.rank;
+    // Fallback: registration
     const reg = registrations.find(r => {
       const rEmail = (r.email || '').toLowerCase().trim();
-      const rPhone = (r.phone || '').toLowerCase().trim();
       const sEmail = (s.email || '').toLowerCase().trim();
-      const sPhone = (s.phone || '').toLowerCase().trim();
-      return (rEmail && rEmail === sEmail) || (rPhone && rPhone === sPhone);
+      return rEmail && rEmail === sEmail;
     });
     if (reg?.course) {
-      const courseText = reg.course.toLowerCase().trim();
-      if (courseText.includes('hạng a') || courseText.includes('hang a')) return 'A';
-      if (courseText.includes('hạng b') || courseText.includes('hang b')) return 'B';
-      if (courseText === 'c001' || courseText === 'a' || courseText === 'vlos') return 'A';
-      if (courseText === 'c002' || courseText === 'c003' || courseText === 'b' || courseText.includes('bvlos')) return 'B';
-    }
-    const cls = classes.find(c => (c.student_ids || []).includes(studentId));
-    if (cls?.rank) return cls.rank;
-    const enr = enrollments.find(e => e.student_id === studentId);
-    if (enr?.class_id) {
-      const cls2 = classes.find(c => c.id === enr.class_id);
-      if (cls2?.rank) return cls2.rank;
+      const ct = reg.course.toLowerCase();
+      if (ct.includes('hạng b') || ct.includes('hang b') || ct.includes('bvlos')) return 'B';
+      if (ct.includes('hạng a') || ct.includes('hang a') || ct.includes('vlos')) return 'A';
     }
     return '—';
+  };
+
+  const getCourseName = (studentId) => {
+    const t = getTuition(studentId);
+    if (t?.courseName) return t.courseName;
+    const inv = getInvoice(studentId);
+    if (inv?.courseName) return inv.courseName;
+    const s = students.find(st => st.id === studentId);
+    if (s?.courseId) {
+      const c = courses.find(co => co.id === s.courseId);
+      return c?.name || s.courseId;
+    }
+    return '';
+  };
+
+  const getTuitionInfo = (studentId) => {
+    const t = getTuition(studentId);
+    if (t) return { amount: t.amount || 0, paid: t.paidAmount || 0, status: t.step || t.status || 'unpaid' };
+    const inv = getInvoice(studentId);
+    if (inv) {
+      const bp = inv.basePrice || inv.finalPrice || 0;
+      const paid = inv.totalPaid || 0;
+      const due = inv.remainingDue ?? (bp - paid);
+      return { amount: bp, paid, status: inv.status || (due <= 0 ? 'paid' : 'partial') };
+    }
+    return { amount: 0, paid: 0, status: 'unpaid' };
+  };
+
+  const getStages = (studentId) => {
+    const enr = getEnrollment(studentId);
+    return enr?.stages || enr?.training_stages || null;
   };
 
   const getAgencyName = (student) => {
     // Ưu tiên dữ liệu từ enrollments/invoices (MySQL)
     const enr = enrollments.find(e => e.student_id === student.id);
     if (enr?.agencyId || enr?.agency_name) {
-      return { id: enr.agencyId || '', name: enr.agency_name || ('ĐL #' + (enr.agencyId || '').substring(0, 8)) };
+      const aid = String(enr.agencyId || '');
+      return { id: aid, name: enr.agency_name || ('ĐL #' + aid.substring(0, 8)) };
     }
     // Fallback sang student.agencyId (JSON cũ)
     if (!student.agencyId) return null;
-    return agencies.find(a => a.id === student.agencyId) || { id: student.agencyId, name: 'ĐL #' + student.agencyId.substring(0, 8) };
+    const sid = String(student.agencyId);
+    return agencies.find(a => String(a.id) === sid) || { id: sid, name: 'ĐL #' + sid.substring(0, 8) };
   };
 
   const handleAssignAgency = async () => {
@@ -303,6 +355,13 @@ export default function StaffStudents() {
     toast.success(`Đã xuất ${studentList.length} học viên ra Excel`);
   };
 
+  const getClassTeachers = (cls) => {
+    if (!cls || !cls.teacher_ids || cls.teacher_ids.length === 0) return '—';
+    return cls.teacher_ids.map(tid => teachers.find(t => t.id === tid)?.fullName || tid).join(', ');
+  };
+
+  const stageLabels = { enrollment: 'Tuyển sinh', theory: 'Lý thuyết', practice: 'Thực hành', exam: 'Sát hạch', certification: 'Chứng chỉ' };
+
   const columns = [
     {
       key: 'student', label: 'Học viên',
@@ -311,36 +370,12 @@ export default function StaffStudents() {
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold">{s.fullName?.charAt(0)?.toUpperCase()}</div>
           <div>
             <div className="text-sm font-medium text-gray-900">{s.fullName}</div>
-            {s.notes && <div className="text-xs text-gray-400">{s.notes}</div>}
+            <div className="text-xs text-gray-400">{s.email}</div>
           </div>
         </div>
       ),
     },
     { key: 'phone', label: 'SĐT', render: (s) => <span className="text-sm text-gray-500">{s.phone || '—'}</span> },
-    {
-      key: 'rank', label: 'Hạng',
-      render: (s) => {
-        const rank = getStudentRank(s.id);
-        return <span className={`badge text-xs font-semibold ${rank === 'A' ? 'bg-blue-100 text-blue-700' : rank === 'B' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>{rank}</span>;
-      },
-    },
-    {
-      key: 'agency', label: 'Đại lý',
-      render: (s) => {
-        const agency = getAgencyName(s);
-        if (!agency) return <span className="text-xs text-gray-400">—</span>;
-        return (
-          <button
-            onClick={() => { setShowAgencyModal(s.id); setAssignAgencyId(s.agencyId || ''); }}
-            className="badge bg-orange-100 text-orange-700 text-xs hover:bg-orange-200 cursor-pointer transition-colors flex items-center gap-1"
-            title="Nhấn để thay đổi đại lý"
-          >
-            <Building2 className="w-3 h-3" />
-            {agency.name}
-          </button>
-        );
-      },
-    },
     {
       key: 'class', label: 'Lớp',
       render: (s) => {
@@ -349,8 +384,83 @@ export default function StaffStudents() {
       },
     },
     {
-      key: 'teachers', label: 'Giáo viên',
-      render: (s) => <span className="text-xs text-gray-500 max-w-[150px] truncate block">{getClassTeachers(getStudentClass(s.id))}</span>,
+      key: 'rank', label: 'Hạng',
+      render: (s) => {
+        const rank = getStudentRank(s.id);
+        if (rank === '—') return <span className="text-xs text-gray-400">—</span>;
+        return <span className={`badge text-xs font-semibold ${RANK_COLORS[rank] || 'bg-gray-100 text-gray-600'}`}><Layers className="w-3 h-3 mr-1 inline" />{RANK_LABELS[rank] || rank}</span>;
+      },
+    },
+    {
+      key: 'course', label: 'Khóa học',
+      render: (s) => {
+        const name = getCourseName(s.id);
+        return name ? <span className="text-sm text-gray-700 font-medium">{name}</span> : <span className="text-xs text-gray-400">—</span>;
+      },
+    },
+    {
+      key: 'tuition', label: 'Học phí',
+      render: (s) => {
+        const info = getTuitionInfo(s.id);
+        if (info.amount === 0 && info.status === 'paid') return <span className="badge bg-emerald-100 text-emerald-700 text-xs font-semibold">🆓 Miễn phí</span>;
+        if (info.amount === 0) return <span className="text-xs text-gray-400">Chưa có</span>;
+        const due = info.amount - info.paid;
+        return due <= 0
+          ? <span className="badge bg-green-100 text-green-700 text-xs font-semibold">{info.amount.toLocaleString('vi-VN')}đ ✅</span>
+          : <span className="badge bg-red-100 text-red-700 text-xs font-semibold">{info.amount.toLocaleString('vi-VN')}đ (thiếu {due.toLocaleString('vi-VN')}đ)</span>;
+      },
+    },
+    {
+      key: 'stages', label: 'Tiến độ',
+      render: (s) => {
+        const stages = getStages(s.id);
+        if (!stages) return <span className="text-xs text-gray-400">—</span>;
+        const entries = Object.entries(stages);
+        const done = entries.filter(([,st]) => st?.status === 'completed').length;
+        return <span className="text-xs text-gray-500">{done}/{entries.length}</span>;
+      },
+    },
+    {
+      key: 'agency', label: 'Đại lý',
+      render: (s) => {
+        const agency = getAgencyName(s);
+        if (!agency) return <span className="text-xs text-gray-400">—</span>;
+        return (
+          <button onClick={() => { setShowAgencyModal(s.id); setAssignAgencyId(s.agencyId || ''); }}
+            className="badge bg-orange-100 text-orange-700 text-xs hover:bg-orange-200 cursor-pointer">
+            <Building2 className="w-3 h-3 mr-1 inline" />{agency.name}
+          </button>
+        );
+      },
+    },
+    { key: 'teachers', label: 'Giáo viên',
+      render: (s) => <span className="text-xs text-gray-500 max-w-[120px] truncate block">{getClassTeachers(getStudentClass(s.id))}</span>,
+    },
+    {
+      key: 'status', label: 'Trạng thái',
+      render: (s) => {
+        const info = getTuitionInfo(s.id);
+        const enr = getEnrollment(s.id);
+        const enrStatus = enr?.status || enr?.enrollment_status || '';
+        return (
+          <div className="flex flex-col gap-1">
+            <span className={`badge text-xs font-semibold ${s.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : s.status === 'FROZEN' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+              {s.status === 'ACTIVE' ? '✅ HĐ' : s.status === 'FROZEN' ? '🔒 Khóa' : s.status}
+            </span>
+            {info.amount > 0 && (
+              <span className={`badge text-xs font-semibold ${info.status === 'paid' ? 'bg-green-100 text-green-700' : info.status === 'partial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                {info.status === 'paid' ? '💰 Đã TT' : info.status === 'partial' ? '⚠️ TT phần' : '❌ Chưa TT'}
+              </span>
+            )}
+            {info.amount === 0 && info.status === 'paid' && <span className="badge bg-emerald-100 text-emerald-700 text-xs">🆓 Free</span>}
+            {enrStatus && (
+              <span className={`badge text-xs ${enrStatus === 'active' || enrStatus === 'studying' ? 'bg-blue-100 text-blue-700' : enrStatus === 'completed' ? 'bg-green-100 text-green-700' : enrStatus === 'frozen' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                📋 {enrStatus === 'active' ? 'Đang học' : enrStatus === 'studying' ? 'Đang học' : enrStatus === 'completed' ? 'HT' : enrStatus === 'frozen' ? 'Bảo lưu' : enrStatus}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -388,27 +498,47 @@ export default function StaffStudents() {
           const cls = getStudentClass(s.id);
           const rank = getStudentRank(s.id);
           const agency = getAgencyName(s);
+          const courseName = getCourseName(s.id);
+          const tuitionInfo = getTuitionInfo(s.id);
+          const stages = getStages(s.id);
+          const t = getTuition(s.id);
           return (
-            <div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Họ tên</p><p className="text-sm font-medium text-gray-900">{s.fullName}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Email</p><p className="text-sm text-gray-700">{s.email}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">SĐT</p><p className="text-sm text-gray-700">{s.phone || '—'}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Hạng</p><span className={`badge font-semibold ${rank === 'A' ? 'bg-blue-100 text-blue-700' : rank === 'B' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>{rank}</span></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Lớp</p><p className="text-sm text-gray-700">{cls?.name || 'Chưa xếp lớp'}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Giáo viên</p><p className="text-sm text-gray-700">{getClassTeachers(cls)}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Đại lý</p>
-                  <p className="text-sm text-gray-700">
-                    {agency ? (
-                      <span className="inline-flex items-center gap-1 text-orange-700 font-medium">
-                        <Building2 className="w-3.5 h-3.5" />{agency.name}
-                      </span>
-                    ) : '—'}
-                  </p>
-                </div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Địa chỉ</p><p className="text-sm text-gray-700">{s.address || '—'}</p></div>
-                <div><p className="text-xs text-gray-400 uppercase font-semibold">Ghi chú</p><p className="text-sm text-gray-700">{s.notes || '—'}</p></div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-400 uppercase font-semibold">Họ tên</p><p className="text-sm font-bold text-gray-900">{s.fullName}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-400 uppercase font-semibold">Email</p><p className="text-sm text-gray-700 break-all">{s.email}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-400 uppercase font-semibold">SĐT</p><p className="text-sm text-gray-700">{s.phone || '—'}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-400 uppercase font-semibold">Trạng thái</p><span className={`badge text-xs font-semibold ${s.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.status === 'ACTIVE' ? '✅ Hoạt động' : '🔒 Đã khóa'}</span></div>
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-blue-50 rounded-lg p-3"><p className="text-xs text-blue-500 uppercase font-semibold">📚 Lớp</p><p className="text-sm font-bold text-blue-900">{cls?.name || 'Chưa xếp lớp'}</p></div>
+                <div className={`rounded-lg p-3 ${rank === 'B' ? 'bg-purple-50' : rank === 'A' ? 'bg-blue-50' : 'bg-gray-50'}`}><p className="text-xs text-gray-400 uppercase font-semibold">🏅 Hạng</p><p className="text-sm font-bold text-gray-900">{rank !== '—' ? RANK_LABELS[rank] || rank : '—'}</p></div>
+                <div className="bg-teal-50 rounded-lg p-3"><p className="text-xs text-teal-500 uppercase font-semibold">🎓 Khóa học</p><p className="text-sm font-bold text-teal-900">{courseName || '—'}</p></div>
+                <div className="bg-orange-50 rounded-lg p-3"><p className="text-xs text-orange-500 uppercase font-semibold">🏢 Đại lý</p><p className="text-sm font-bold text-orange-900">{agency ? <span className="inline-flex items-center gap-1"><Building2 className="w-3.5 h-3.5" />{agency.name}</span> : '—'}</p></div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3 flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Học phí</h4>
+                <div className="flex gap-6">
+                  <div><p className="text-xs text-gray-400">Tổng</p><p className="text-base font-extrabold text-gray-900">{tuitionInfo.amount.toLocaleString('vi-VN')}đ</p></div>
+                  <div><p className="text-xs text-gray-400">Đã nộp</p><p className="text-base font-extrabold text-green-600">{tuitionInfo.paid.toLocaleString('vi-VN')}đ</p></div>
+                  <div><p className="text-xs text-gray-400">Còn lại</p><p className={`text-base font-extrabold ${(tuitionInfo.amount - tuitionInfo.paid) > 0 ? 'text-red-600' : 'text-green-600'}`}>{Math.max(0, tuitionInfo.amount - tuitionInfo.paid).toLocaleString('vi-VN')}đ</p></div>
+                </div>
+              </div>
+              {stages && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">📊 Tiến độ học tập</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(stages).map(([key, val]) => (
+                      <div key={key} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
+                        val?.status === 'completed' ? 'bg-green-100 text-green-700' : val?.status === 'in_progress' ? 'bg-amber-100 text-amber-700' : val?.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {val?.status === 'completed' ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : val?.status === 'in_progress' ? <Clock className="w-3.5 h-3.5 text-amber-500" /> : <Clock className="w-3.5 h-3.5 text-gray-300" />}
+                        {stageLabels[key] || key}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         }}

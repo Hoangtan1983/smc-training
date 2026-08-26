@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { UserCog, Edit3, Trash2, Plus, X, Check, UserPlus, FileSpreadsheet } from 'lucide-react';
+import { UserCog, Edit3, Trash2, Plus, X, Check, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ExpandableDataTable from '../../components/ExpandableDataTable';
-import ImportStudentsModal from '../../components/ImportStudentsModal';
 
 export default function AdminUserManager() {
   const { getAllUsers, createUser, updateUser, deleteUser, ROLE_LABELS } = useAuth();
@@ -11,7 +10,6 @@ export default function AdminUserManager() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState({ fullName: '', email: '', password: '', role: 'STUDENT', phone: '' });
-  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => { refresh(); }, []);
 
@@ -59,14 +57,16 @@ export default function AdminUserManager() {
   };
 
   const handleToggleStatus = async (user) => {
-    // Chỉ toggle ACTIVE <-> FROZEN. PENDING không toggle qua toggle này.
+    // PENDING → ACTIVE (kích hoạt); ACTIVE ↔ FROZEN (khóa/mở khóa)
+    let newStatus;
     if (user.status === 'PENDING') {
-      toast('Tài khoản đang chờ duyệt. Vui lòng duyệt trước khi thay đổi trạng thái.');
-      return;
+      newStatus = 'ACTIVE';
+    } else {
+      newStatus = user.status === 'ACTIVE' ? 'FROZEN' : 'ACTIVE';
     }
-    const newStatus = user.status === 'ACTIVE' ? 'FROZEN' : 'ACTIVE';
     await updateUser(user.id, { status: newStatus });
-    toast.success(newStatus === 'ACTIVE' ? 'Đã mở khóa tài khoản' : 'Đã khóa tài khoản');
+    if (user.status === 'PENDING') toast.success('Đã kích hoạt tài khoản');
+    else toast.success(newStatus === 'ACTIVE' ? 'Đã mở khóa tài khoản' : 'Đã khóa tài khoản');
     refresh();
   };
 
@@ -91,9 +91,9 @@ export default function AdminUserManager() {
       key: 'status', label: 'Trạng thái',
       render: (u) => (
         <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(u); }}
-          className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-500' : 'bg-red-500'}`} />
-          {u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa'}
+          className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : u.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-500' : u.status === 'PENDING' ? 'bg-amber-500' : 'bg-red-500'}`} />
+          {u.status === 'ACTIVE' ? 'Hoạt động' : u.status === 'PENDING' ? 'Chờ duyệt' : 'Đã khóa'}
         </button>
       ),
     },
@@ -108,9 +108,6 @@ export default function AdminUserManager() {
         </div>
         <div className="flex gap-2">
           <button onClick={openCreate} className="btn-primary flex items-center gap-2"><UserPlus className="w-4 h-4" /> Tạo người dùng</button>
-          <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2 border border-green-300 text-green-700 hover:bg-green-50">
-            <FileSpreadsheet className="w-4 h-4" /> Nhập Excel
-          </button>
         </div>
       </div>
 
@@ -139,12 +136,12 @@ export default function AdminUserManager() {
             <div><p className="text-xs text-gray-400 uppercase font-semibold">Email</p><p className="text-sm text-gray-700">{u.email}</p></div>
             <div><p className="text-xs text-gray-400 uppercase font-semibold">SĐT</p><p className="text-sm text-gray-700">{u.phone || '—'}</p></div>
             <div><p className="text-xs text-gray-400 uppercase font-semibold">Vai trò</p><span className={`badge ${ROLE_LABELS[u.role]?.badge || 'badge-student'}`}>{roleLabelMap[u.role]}</span></div>
-            <div><p className="text-xs text-gray-400 uppercase font-semibold">Trạng thái</p><span className={`text-sm font-medium ${u.status === 'ACTIVE' ? 'text-green-600' : 'text-red-600'}`}>{u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa'}</span></div>
+            <div><p className="text-xs text-gray-400 uppercase font-semibold">Trạng thái</p><span className={`text-sm font-medium ${u.status === 'ACTIVE' ? 'text-green-600' : u.status === 'PENDING' ? 'text-amber-600' : 'text-red-600'}`}>{u.status === 'ACTIVE' ? 'Hoạt động' : u.status === 'PENDING' ? 'Chờ duyệt' : 'Đã khóa'}</span></div>
             <div><p className="text-xs text-gray-400 uppercase font-semibold">Ngày tạo</p><p className="text-sm text-gray-700">{u.createdAt ? new Date(u.createdAt).toLocaleString('vi-VN') : '—'}</p></div>
             <div><p className="text-xs text-gray-400 uppercase font-semibold">ID</p><p className="text-xs text-gray-400 font-mono">{u.id}</p></div>
             <div className="flex items-end gap-2">
               <button onClick={() => openEdit(u)} className="btn-ghost text-xs flex items-center gap-1 text-blue-600"><Edit3 className="w-3.5 h-3.5" /> Sửa</button>
-              <button onClick={() => handleToggleStatus(u)} className={`btn-ghost text-xs flex items-center gap-1 ${u.status === 'ACTIVE' ? 'text-red-600' : 'text-green-600'}`}>{u.status === 'ACTIVE' ? 'Khóa' : 'Mở khóa'}</button>
+              <button onClick={() => handleToggleStatus(u)} className={`btn-ghost text-xs flex items-center gap-1 ${u.status === 'ACTIVE' ? 'text-red-600' : 'text-green-600'}`}>{u.status === 'ACTIVE' ? 'Khóa' : u.status === 'PENDING' ? 'Kích hoạt' : 'Mở khóa'}</button>
             </div>
           </div>
         )}
@@ -173,7 +170,6 @@ export default function AdminUserManager() {
         </div>
       )}
 
-      {showImport && <ImportStudentsModal onClose={() => setShowImport(false)} onSuccess={() => refresh()} />}
     </div>
   );
 }

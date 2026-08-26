@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { apiLogin, apiRegister, apiGetMe, apiGetUsers, apiCreateUser, apiUpdateUser, apiDeleteUser, apiChangePassword, setToken, getToken } from '../data/api';
+import { apiLogin, apiRegister, apiGetMe, apiGetUsers, apiCreateUser, apiUpdateUser, apiDeleteUser, apiChangePassword, apiGetSyncVersion, setToken, getToken } from '../data/api';
 import { seedFromAPI } from '../data/seedData';
 
 const AuthContext = createContext(null);
@@ -31,7 +31,8 @@ let usersCache = [];
 async function loadUsersFromAPI() {
   try {
     const data = await apiGetUsers();
-    usersCache = data.users || [];
+    // API mới (MySQL) trả về array trực tiếp, API cũ trả về {users: [...]}
+    usersCache = Array.isArray(data) ? data : (data.users || []);
   } catch { /* giữ cache cũ */ }
   return usersCache;
 }
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
       if (storedToken) {
         try {
           const me = await apiGetMe();
+          // API trả về user trực tiếp
           setUser(me);
           localStorage.setItem('smc-session', JSON.stringify(me));
           // Load users + seed data từ API
@@ -66,6 +68,33 @@ export function AuthProvider({ children }) {
     };
     init();
   }, []);
+
+  // ── Polling đồng bộ liên tài khoản (khoá học, lớp học, users, enrollments) ──
+  useEffect(() => {
+    if (!user) return;
+    let lastVersions = null;
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      try {
+        const data = await apiGetSyncVersion();
+        const versions = data?.versions || {};
+        if (lastVersions) {
+          const changed = Object.keys(versions).filter((k) => versions[k] !== lastVersions[k]);
+          if (changed.length > 0) {
+            const { emitDataChange } = await import('../data/api');
+            changed.forEach((res) => emitDataChange(res, {}, 'remote-sync'));
+          }
+        }
+        lastVersions = versions;
+      } catch { /* bỏ qua lỗi polling */ }
+      if (!cancelled) timer = setTimeout(poll, 4000);
+    };
+
+    timer = setTimeout(poll, 4000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [user]);
 
   const getAllUsers = useCallback(async () => {
     await loadUsersFromAPI();
@@ -97,13 +126,14 @@ export function AuthProvider({ children }) {
       phone: formData.phone || '',
       courseId: formData.courseId || '',
     });
-    // API trả về token hoặc message (nếu PENDING)
+    // API trả về token (kích hoạt ngay) hoặc message + user PENDING (chờ duyệt)
     if (result.token) {
       setToken(result.token);
       localStorage.setItem('smc-session', JSON.stringify(result.user));
       setUser(result.user);
+      await loadUsersFromAPI();
     }
-    await loadUsersFromAPI();
+    // Không load users khi tài khoản PENDING (chưa có token → tránh 401 tự chuyển /login)
     // Trả về cả user và message để frontend xử lý
     return { ...result.user, message: result.message, status: result.user?.status };
   }, []);
@@ -112,21 +142,28 @@ export function AuthProvider({ children }) {
     const result = await apiCreateUser(formData);
     await loadUsersFromAPI();
     const { emitDataChange } = await import('../data/api');
-    emitDataChange('users', { action: 'created', userId: result.user?.id });
-    return result.user;
+    // API mới trả về user trực tiếp, API cũ trả về {user: {...}}
+    const newUser = result.user || result;
+    emitDataChange('users', { action: 'created', userId: newUser?.id });
+    return newUser;
   }, []);
 
   const updateUser = useCallback(async (id, updates) => {
     const result = await apiUpdateUser(id, updates);
     await loadUsersFromAPI();
-    if (user?.id === id) {
-      const updatedUser = { ...user, ...result.user, password: undefined };
-      setUser(updatedUser);
-      localStorage.setItem('smc-session', JSON.stringify(updatedUser));
+    // API mới trả về {success: true}, cần load lại user từ cache
+    if (user?.id === id || String(user?.id) === String(id)) {
+      const freshUsers = usersCache;
+      const updatedUser = freshUsers.find(u => String(u.id) === String(id));
+      if (updatedUser) {
+        const cleanUser = { ...updatedUser, password: undefined };
+        setUser(cleanUser);
+        localStorage.setItem('smc-session', JSON.stringify(cleanUser));
+      }
     }
     const { emitDataChange } = await import('../data/api');
     emitDataChange('users', { action: 'updated', userId: id });
-    return result.user;
+    return result.user || result;
   }, [user]);
 
   const deleteUser = useCallback(async (id) => {

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Flag, AlertTriangle, Save } from 'lucide-react';
 import QuestionCard from '../../components/QuestionCard';
 import ExamTimer from '../../components/ExamTimer';
-import { getExamSet, generateRandomExam, ensureLoaded } from '../../data/questionBank';
+import { getExamSet, generateRandomExam, getExamByModule, MODULE_INFO, ensureLoaded } from '../../data/questionBank';
 import { useAuth } from '../../context/AuthContext';
 import { apiSubmitExamResult } from '../../data/api';
 import toast from 'react-hot-toast';
@@ -22,6 +22,10 @@ export default function StudentExamPage() {
   const [error, setError] = useState(null);
   const startTimeRef = useRef(Date.now());
 
+  const isSubject = !!examId && examId.startsWith('subject-');
+  const moduleCode = isSubject ? examId.slice('subject-'.length) : null;
+  const subjectInfo = moduleCode ? MODULE_INFO[moduleCode] : null;
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -31,8 +35,13 @@ export default function StudentExamPage() {
         let qs;
         if (examId === 'random') {
           qs = generateRandomExam(100);
+        } else if (isSubject) {
+          qs = getExamByModule(moduleCode);
         } else {
           qs = getExamSet(parseInt(examId) || 1);
+        }
+        if (!qs || qs.length === 0) {
+          throw new Error(isSubject ? 'Môn học này chưa có câu hỏi.' : 'Không thể tạo đề thi.');
         }
         if (!cancelled) {
           setQuestions(qs);
@@ -73,8 +82,12 @@ export default function StudentExamPage() {
       id: resultId,
       student_id: user?.id,
       student_name: user?.fullName || user?.email || 'Học viên',
-      exam_type: examId === 'random' ? 'Thi thử (Đề Random)' : `Luyện thi - Đề cố định số ${examId}`,
-      exam_number: examId === 'random' ? 'random' : parseInt(examId),
+      exam_type: isSubject
+        ? `Thi theo môn — ${subjectInfo?.name || moduleCode}`
+        : examId === 'random'
+          ? 'Thi thử (Đề Random)'
+          : `Luyện thi - Đề cố định số ${examId}`,
+      exam_number: isSubject ? examId : (examId === 'random' ? 'random' : parseInt(examId)),
       date: new Date().toISOString(),
       questions: questions.map((q, i) => ({
         ...q,
@@ -146,6 +159,7 @@ export default function StudentExamPage() {
 
   const answeredCount = Object.keys(answers).length;
   const unansweredCount = questions.length - answeredCount;
+  const examDuration = questions.length > 0 ? Math.max(10, Math.round(questions.length * 1.2)) : 120;
 
   return (
     <div className="animate-fade-in">
@@ -154,7 +168,9 @@ export default function StudentExamPage() {
         <div className="flex items-center justify-between max-w-4xl mx-auto">
           <div>
             <h1 className="text-sm font-bold text-gray-900">
-              {examId === 'random' ? '🧪 Thi thử — Đề Random (100 câu)' : `📝 Luyện thi — Đề cố định số ${examId}`}
+              {isSubject
+                ? `${subjectInfo?.icon || '📚'} Thi theo môn — ${subjectInfo?.name || moduleCode} (${questions.length} câu)`
+                : examId === 'random' ? '🧪 Thi thử — Đề Random (100 câu)' : `📝 Luyện thi — Đề cố định số ${examId}`}
             </h1>
             <p className="text-xs text-gray-500">
               Đã trả lời: <strong className="text-blue-600">{answeredCount}</strong>/{questions.length} câu
@@ -167,7 +183,7 @@ export default function StudentExamPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <ExamTimer durationMinutes={120} onTimeUp={handleTimeUp} />
+            <ExamTimer durationMinutes={examDuration} onTimeUp={handleTimeUp} />
             <button onClick={() => setShowConfirm(true)} className="btn-primary text-sm px-4">
               Nộp bài
             </button>
