@@ -17,6 +17,15 @@ assets/*.css
 api/data/
 api/backups/
 
+# Bản sao lưu file máy chủ trước mỗi lần deploy.
+# Thư mục thật là backups/ ở gốc dự án, KHÔNG phải api/backups/.
+# Chứa dump production (91 tài khoản kèm password_hash) và bản sao env.php
+# (mật khẩu MySQL + khóa JWT) — tuyệt đối không đẩy lên GitHub.
+backups/
+*.server-backup-*
+db-snapshot-*.json
+smc-db-dump-*.json
+
 # Lỗi dev cũ (các file .legacy)
 *.legacy
 
@@ -25,6 +34,13 @@ api/env.php
 .env
 .env.*
 !.env.example
+
+# deploy.sh nhúng mật khẩu FTP dạng văn bản thường
+deploy.sh
+deploy.sh.truoc-khi-chuyen-may
+
+# Node.js chép sang khi chuyển máy (không thuộc mã nguồn)
+_tools/
 
 # OS files
 .DS_Store
