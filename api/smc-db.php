@@ -59,11 +59,36 @@ function dbGetUserId($auth) {
     // Token từ auth.php dùng string ID kiểu "u-student-xxx" cho sub field
     // Cần map sang MySQL BIGINT id qua bảng users
     if (!empty($id) && !is_numeric($id)) {
-        $user = DB::selectOne(
-            "SELECT id FROM users WHERE id = ? OR email = ? OR phone = ?",
-            [$id, $auth['email'] ?? '', $auth['email'] ?? '']
-        );
+        $email = $auth['email'] ?? '';
+        $phone = $auth['phone'] ?? '';
+
+        // Try multiple ways to find the MySQL user
+        $user = null;
+
+        // 1. Try by email
+        if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $user = DB::selectOne("SELECT id FROM users WHERE email = ?", [$email]);
+        }
+
+        // 2. Try by phone (email field in auth might actually be a phone number)
+        if (!$user && $email && preg_match('/^\d{9,11}$/', preg_replace('/\D/', '', $email))) {
+            $phoneDigits = preg_replace('/\D/', '', $email);
+            $user = DB::selectOne("SELECT id FROM users WHERE REPLACE(REPLACE(phone, ' ', ''), '-', '') LIKE ?", ["%{$phoneDigits}%"]);
+        }
+
+        // 3. Try by phone field
+        if (!$user && $phone) {
+            $user = DB::selectOne("SELECT id FROM users WHERE phone = ?", [$phone]);
+        }
+
         if ($user) return (int)$user['id'];
+
+        // 4. Last resort: find any student with matching email/phone pattern
+        if ($email) {
+            $user = DB::selectOne("SELECT id FROM users WHERE email = ? OR phone = ? LIMIT 1", [$email, $email]);
+            if ($user) return (int)$user['id'];
+        }
+
         return 0;
     }
     return (int)$id;
@@ -127,6 +152,11 @@ function dbGetRankAbbr($courseName) {
     return '';
 }
 
+/** Định dạng số tiền theo chuẩn Việt Nam: 25.000.000 (dấu chấm phân cách hàng nghìn) */
+function vnd($n) {
+    return number_format((float)$n, 0, ',', '.');
+}
+
 // ──── ROUTING ────
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
@@ -163,7 +193,7 @@ if ($action === 'health' || empty($action)) {
 // POST Body: { studentId*, courseId*, basePrice?, agencyId?, note?, classId? }
 // =====================================================================
 if ($action === 'create-invoice') {
-    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    $auth = dbRequireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'admin', 'staff', 'accountant']);
     if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
 
     $input = dbInput();
@@ -289,11 +319,11 @@ if ($action === 'create-invoice') {
 // POST Body: { enrollmentId*, amount*, method?, note?, evidenceImage? }
 // =====================================================================
 if ($action === 'record-payment') {
-    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    $auth = dbRequireRole(['ADMIN', 'ACCOUNTANT', 'admin', 'accountant']);
     if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
 
     $input = dbInput();
-    $enrollmentId = (int)($input['enrollmentId'] ?? $input['invoiceId'] ?? 0);
+    $enrollmentId = (int)($input['enrollmentId'] ?? 0);
     $invoiceIdRaw = (int)($input['invoiceId'] ?? 0);
     $amount = (int)($input['amount'] ?? 0);
     $paymentMethod = $input['method'] ?? 'cash';
@@ -316,6 +346,9 @@ if ($action === 'record-payment') {
 
     $userId = dbGetUserId($auth);
 
+    // Đảm bảo remaining_amount đúng (cột denormalized có thể chưa được điền khi tạo hồ sơ)
+    DB::execute("UPDATE enrollments SET remaining_amount = final_amount - paid_amount WHERE id=?", [$enrollmentId]);
+
     // v5: Dùng sp_record_payment — tự động phân biệt cash vs bank_transfer
     $result = DB::call('sp_record_payment', [
         $enrollmentId,
@@ -335,10 +368,28 @@ if ($action === 'record-payment') {
 
     if (!$paymentId) dbJson(['error' => 'Lỗi tạo phiếu thu'], 500);
 
-    // v5: KHÔNG auto-approve nữa. Trả về trạng thái để frontend hiển thị.
-    $message = $paymentStatus === 'staff_confirmed'
-        ? 'Đã xác nhận thu tiền mặt! Chuyển cho Kế toán để đối soát & kích hoạt khóa học.'
-        : 'Đã ghi nhận thanh toán! Kế toán sẽ đối soát và kích hoạt khóa học.';
+    // Kế toán / Admin ghi nhận thanh toán (tiền mặt) → xác nhận ngay và liên thông toàn hệ thống:
+    // sp_approve_payment cập nhật enrollments.paid_amount/payment_status/eligible_for_exam,
+    // invoices.total_paid/status, payment_schedules, hoa hồng đại lý và audit_log.
+    $role = strtolower($auth['role'] ?? '');
+    $isApprover = in_array($role, ['admin', 'accountant']);
+
+    if ($isApprover) {
+        DB::call('sp_approve_payment', [$paymentId, $userId, $note]);
+        // Đảm bảo invoice.status đúng theo final_price (giá sau chiết khấu) — procedure có thể set sai
+        $inv0 = DB::selectOne("SELECT final_price, total_paid FROM invoices WHERE enrollment_id = ?", [$enrollmentId]);
+        if ($inv0) {
+            $tp = (int)$inv0['total_paid']; $fp = (int)$inv0['final_price'];
+            $st = ($fp > 0 && $tp >= $fp) ? 'paid' : ($tp > 0 ? 'partial' : 'pending');
+            DB::execute("UPDATE invoices SET status=?, updated_at=NOW() WHERE enrollment_id=?", [$st, $enrollmentId]);
+        }
+        $paymentStatus = 'approved';
+        $message = 'Đã xác nhận thanh toán tiền mặt! Hồ sơ đã được cập nhật liên thông toàn hệ thống.';
+    } else {
+        $message = $paymentStatus === 'staff_confirmed'
+            ? 'Đã xác nhận thu tiền mặt! Chuyển cho Kế toán để đối soát & kích hoạt khóa học.'
+            : 'Đã ghi nhận thanh toán! Kế toán sẽ đối soát và kích hoạt khóa học.';
+    }
 
     dbJson([
         'success' => true,
@@ -392,6 +443,7 @@ if ($action === 'submit-receipt') {
         null,       // collector = null (chưa confirm)
         $userId,    // submitted_by = student
         $note,
+        null,       // evidence_image (sinh viên dùng receipt_image riêng)
     ]);
 
     $paymentId = $result[0]['payment_id'] ?? 0;
@@ -436,19 +488,20 @@ if ($action === 'confirm-receipt') {
     }
 
     $result = DB::call('sp_approve_payment', [$paymentId, dbGetUserId($auth), $note]);
-    $data = $result[0] ?? [];
-
-    // Auto activate student if fully paid
-    $enr = DB::selectOne("SELECT * FROM enrollments WHERE id = ?", [$payment['enrollment_id']]);
-    if (($enr['payment_status'] ?? '') === 'fully_paid') {
-        DB::execute("UPDATE users SET status = 'active' WHERE id = ?", [$enr['student_id']]);
+    // Đảm bảo invoice.status đúng theo final_price (procedure cũ dùng base_price)
+    $inv0 = DB::selectOne("SELECT final_price, total_paid FROM invoices WHERE enrollment_id = ?", [(int)$payment['enrollment_id']]);
+    if ($inv0) {
+        $tp = (int)$inv0['total_paid']; $fp = (int)$inv0['final_price'];
+        $st = ($fp > 0 && $tp >= $fp) ? 'paid' : ($tp > 0 ? 'partial' : 'pending');
+        DB::execute("UPDATE invoices SET status=?, updated_at=NOW() WHERE enrollment_id=?", [$st, (int)$payment['enrollment_id']]);
     }
+    $data = $result[0] ?? [];
 
     $fromStatus = $payment['status'] === 'staff_confirmed' ? 'tiền mặt (nhân viên đã xác nhận)' : 'chuyển khoản';
 
     dbJson([
         'success' => true,
-        'message' => 'Đã đối soát & duyệt phiếu thu (' . $fromStatus . '). Khóa học đã được kích hoạt!',
+        'message' => 'Đã đối soát & duyệt phiếu thu (' . $fromStatus . ').',
         'data' => $data,
     ]);
 }
@@ -478,6 +531,21 @@ if ($action === 'reject-receipt') {
 // =====================================================================
 if ($action === 'list-invoices') {
     $auth = dbRequireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'AGENCY', 'admin', 'staff', 'accountant', 'agency']);
+
+    // Nếu là AGENCY, tự động lọc theo agency của họ
+    $userRole = strtolower($auth['role'] ?? '');
+    if ($userRole === 'agency') {
+        $userEmail = $auth['email'] ?? '';
+        $ag = DB::selectOne("SELECT id, agent_code, name FROM agents WHERE email = ? OR agent_code = ?", [$userEmail, $userEmail]);
+        if ($ag) {
+            // Lọc theo cả agency_id (MySQL numeric) và agency_name (JSON string)
+            // vì invoices lưu agency_id dưới dạng JSON string ID
+            $agencyNameForFilter = $ag['name'];
+            $where[] = '(i.agency_id = ? OR i.agency_name = ?)';
+            $params[] = (string)$ag['id'];
+            $params[] = $agencyNameForFilter;
+        }
+    }
 
     $status = $_GET['status'] ?? '';
     $search = $_GET['search'] ?? '';
@@ -530,7 +598,7 @@ if ($action === 'list-invoices') {
     $invoices = DB::select(
         "SELECT i.*, e.enrollment_code, e.student_id, e.course_id, e.payment_status AS enrollment_status,
                 e.eligible_for_exam,
-                COALESCE(i.student_name, u.full_name) AS student_name,
+                COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name,
                 COALESCE(i.student_email, u.email) AS student_email,
                 COALESCE(i.student_phone, u.phone) AS student_phone,
                 c.name AS course_name, c.tuition_fee AS course_price
@@ -581,17 +649,11 @@ if ($action === 'list-invoices') {
             continue;
         }
 
-        // Status=paid → totalPaid = basePrice
-        if (($inv['status'] ?? '') === 'paid') {
-            $inv['total_paid'] = $bp;
-            $paid = $bp;
-        }
-
+        // Status=paid → giữ nguyên total_paid thực tế đã nộp
         $inv['basePrice'] = $bp;
         $inv['totalPaid'] = $paid;
-        // v5: remainingDue = finalPrice - totalPaid cho đại lý
-        $hasAgency = !empty($inv['agency_id']) && ($inv['agency_discount_percent'] ?? 0) > 0;
-        $threshold = $hasAgency ? $fp : $bp;
+        // "Đóng đủ" tính theo giá sau chiết khấu đại lý (final_price)
+        $threshold = $fp;
         $inv['remainingDue'] = max(0, $threshold - $paid);
         $inv['finalPrice'] = $fp;
         $inv['amount'] = $bp;
@@ -633,7 +695,7 @@ if ($action === 'get-invoice-detail') {
     if ($invoiceId) {
         $invoice = DB::selectOne(
             "SELECT i.*, e.enrollment_code, e.student_id, e.course_id, e.payment_status,
-                    COALESCE(i.student_name, u.full_name) AS student_name,
+                    COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name,
                     c.name AS course_name, c.tuition_fee
              FROM invoices i
              JOIN enrollments e ON i.enrollment_id = e.id
@@ -644,7 +706,7 @@ if ($action === 'get-invoice-detail') {
     } else {
         $invoice = DB::selectOne(
             "SELECT i.*, e.enrollment_code, e.student_id, e.course_id, e.payment_status,
-                    COALESCE(i.student_name, u.full_name) AS student_name,
+                    COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name,
                     c.name AS course_name, c.tuition_fee
              FROM invoices i
              JOIN enrollments e ON i.enrollment_id = e.id
@@ -675,7 +737,9 @@ if ($action === 'get-invoice-detail') {
     $bp = (int)($invoice['base_price'] ?? 0);
     $fp = (int)($invoice['final_price'] ?? $bp);
     $paid = (int)($invoice['total_paid'] ?? 0);
-    if (($invoice['status'] ?? '') === 'paid') $paid = $bp;
+
+    // "Đóng đủ" tính theo giá sau chiết khấu đại lý (final_price)
+    $threshold = $fp;
 
     $response = [
         'id' => (string)$invoice['id'],
@@ -690,14 +754,13 @@ if ($action === 'get-invoice-detail') {
         'basePrice' => $bp,
         'finalPrice' => $fp,
         'totalPaid' => $paid,
-        // v5: remainingDue dùng finalPrice cho đại lý
-        'remainingDue' => max(0, $hasAgency ? $fp - $paid : $bp - $paid),
+        'remainingDue' => max(0, $threshold - $paid),
         'agencyId' => $invoice['agency_id'] ?? '',
         'agencyName' => $invoice['agency_name'] ?? '',
         'agencyDiscountPercent' => (float)($invoice['agency_discount_percent'] ?? 0),
         'agencyDiscountAmount' => (int)($invoice['agency_discount_amount'] ?? 0),
         'status' => $invoice['status'] ?? 'pending',
-        'step' => dbComputeStep($invoice['status'] ?? 'pending', $paid, $hasAgency ? $fp : $bp),
+        'step' => dbComputeStep($invoice['status'] ?? 'pending', $paid, $threshold),
         'amount' => $bp,
         'actualAmount' => $fp,
         'note' => $invoice['note'] ?? '',
@@ -763,11 +826,6 @@ if ($action === 'get-student-invoices') {
             $inv['studentName'] = 'HV #' . $studentId;
         }
 
-    foreach ($invoices as &$inv) {
-        $bp = (int)($inv['base_price'] ?? 0);
-        $fp = (int)($inv['final_price'] ?? $bp);
-        $paid = (int)($inv['total_paid'] ?? 0);
-
         // Exempt
         if (($inv['status'] ?? '') === 'exempt') {
             $inv['remainingDue'] = 0;
@@ -800,18 +858,17 @@ if ($action === 'get-student-invoices') {
         $inv['studentRank'] = dbGetRankAbbr($inv['course_name'] ?? '');
         $inv['basePrice'] = $bp;
         $inv['totalPaid'] = $paid;
-        // v5: remainingDue = finalPrice - totalPaid cho đại lý
-        $hasAgency = !empty($inv['agency_id']) && ($inv['agency_discount_percent'] ?? 0) > 0;
-        $threshold = $hasAgency ? $fp : $bp;
-        $inv['remainingDue'] = max(0, $threshold - $paid);
-        $inv['finalPrice'] = $fp;
+        // Học viên LUÔN thấy giá GỐC (basePrice), KHÔNG trừ chiết khấu đại lý
+        // (chiết khấu là quan hệ giữa Đại lý và trung tâm, không hiển thị cho học viên)
+        $inv['remainingDue'] = max(0, $bp - $paid);
+        $inv['finalPrice'] = $bp;
         $inv['amount'] = $bp;
-        $inv['actualAmount'] = $fp;
+        $inv['actualAmount'] = $bp;
         $inv['step'] = dbComputeStep($inv['status'] ?? 'pending', $paid, $bp);
         $inv['agencyId'] = $inv['agency_id'] ?? '';
-        $inv['agencyDiscountPercent'] = (float)($inv['agency_discount_percent'] ?? 0);
-        $inv['agencyDiscountAmount'] = (int)($inv['agency_discount_amount'] ?? 0);
-        $inv['owesToSmc'] = $bp > 0 ? (int)($bp * (1 - $inv['agencyDiscountPercent'] / 100)) : 0;
+        $inv['agencyDiscountPercent'] = 0;
+        $inv['agencyDiscountAmount'] = 0;
+        $inv['owesToSmc'] = $bp;
 
         $inv['transactions'] = array_map(function($p) {
             return [
@@ -848,7 +905,7 @@ if ($action === 'get-overall-report') {
                     SUM(CASE WHEN e.payment_status = 'exempt' THEN 1 ELSE 0 END) AS exempt,
                     COALESCE(SUM(e.final_amount), 0) AS total_revenue,
                     COALESCE(SUM(e.paid_amount), 0) AS total_collected,
-                    COALESCE(SUM(e.remaining_amount), 0) AS total_outstanding
+                    COALESCE(SUM(GREATEST(e.final_amount - e.paid_amount, 0)), 0) AS total_outstanding
              FROM enrollments e
              WHERE e.enrollment_status != 'cancelled'"
         );
@@ -869,7 +926,7 @@ if ($action === 'get-overall-report') {
             "SELECT c.name AS course_name, c.tuition_fee,
                     COUNT(*) AS count,
                     COALESCE(SUM(e.paid_amount), 0) AS collected,
-                    COALESCE(SUM(e.remaining_amount), 0) AS due
+                    COALESCE(SUM(GREATEST(e.final_amount - e.paid_amount, 0)), 0) AS due
              FROM enrollments e
              JOIN courses c ON e.course_id = c.id
              WHERE e.enrollment_status != 'cancelled'
@@ -895,8 +952,9 @@ if ($action === 'get-overall-report') {
             "SELECT i.agency_name AS name, COUNT(DISTINCT e.student_id) AS students,
                     COUNT(*) AS invoices,
                     COALESCE(SUM(e.paid_amount), 0) AS received,
-                    COALESCE(SUM(e.remaining_amount), 0) AS due,
-                    COALESCE(SUM(i.agency_discount_amount), 0) AS discount_total
+                    COALESCE(SUM(GREATEST(e.final_amount - e.paid_amount, 0)), 0) AS due,
+                    COALESCE(SUM(i.agency_discount_amount), 0) AS discount_total,
+                    MAX(i.agency_discount_percent) AS discount_percent
              FROM invoices i
              JOIN enrollments e ON i.enrollment_id = e.id
              WHERE i.agency_id != '' AND i.agency_id IS NOT NULL
@@ -952,22 +1010,22 @@ if ($action === 'get-overall-report') {
             'data' => [
                 'total_invoices' => $totalInvoices,
                 'total_received' => $totalReceived,
-                'total_received_fmt' => number_format($totalReceived) . ' ₫',
+                'total_received_fmt' => vnd($totalReceived) . ' ₫',
                 'total_actual_received' => $totalActualReceived,
-                'total_actual_received_fmt' => number_format($totalActualReceived) . ' ₫',
+                'total_actual_received_fmt' => vnd($totalActualReceived) . ' ₫',
                 'total_due' => $totalDue,
-                'total_due_fmt' => number_format($totalDue) . ' ₫',
+                'total_due_fmt' => vnd($totalDue) . ' ₫',
                 'total_base_price' => $totalBasePrice,
-                'total_base_price_fmt' => number_format($totalBasePrice) . ' ₫',
+                'total_base_price_fmt' => vnd($totalBasePrice) . ' ₫',
                 'total_students' => $totalStudents,
                 'activated_count' => $activatedCount,
                 'free_student_count' => $freeCount,
                 'exempt_count' => $freeCount,
                 'today_amount' => (int)($today['amount'] ?? 0),
-                'today_amount_fmt' => number_format((int)($today['amount'] ?? 0)) . ' ₫',
+                'today_amount_fmt' => vnd((int)($today['amount'] ?? 0)) . ' ₫',
                 'today_transactions' => (int)($today['count'] ?? 0),
                 'total_commission' => $totalCommission,
-                'total_commission_fmt' => number_format($totalCommission) . ' ₫',
+                'total_commission_fmt' => vnd($totalCommission) . ' ₫',
                 'agency_count' => count($byAgency),
                 'collection_rate' => $collectionRate,
                 'by_course' => array_values($byRankGroup),
@@ -988,7 +1046,9 @@ if ($action === 'get-agency-report') {
     $auth = dbAuth();
     if (!$auth) dbJson(['error' => 'Unauthorized'], 401);
 
-    $requestAgencyId = $_GET['agencyId'] ?? '';
+    $isAgency = in_array($auth['role'] ?? '', ['AGENCY', 'agency']);
+    // Đại lý chỉ được xem báo cáo của CHÍNH MÌNH — bỏ qua agencyId từ query
+    $requestAgencyId = $isAgency ? '' : ($_GET['agencyId'] ?? '');
     $agencyId = is_numeric($requestAgencyId) ? (int)$requestAgencyId : $requestAgencyId;
 
     // Nếu Kế toán/Admin/Staff gọi không có agencyId → trả về báo cáo tổng hợp tất cả đại lý
@@ -997,7 +1057,7 @@ if ($action === 'get-agency-report') {
         // Tổng hợp tất cả đại lý
         $allInvoices = DB::select(
             "SELECT i.*, e.enrollment_code, e.student_id, e.course_id, e.payment_status,
-                    COALESCE(i.student_name, u.full_name) AS student_name,
+                    COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name,
                     COALESCE(i.student_phone, u.phone) AS student_phone,
                     c.name AS course_name, c.tuition_fee
              FROM invoices i
@@ -1016,11 +1076,9 @@ if ($action === 'get-agency-report') {
         $byAgency = [];
         foreach ($allInvoices as &$inv) {
             $bp = (int)($inv['base_price'] ?? 0);
-            $paid = (int)($inv['total_paid'] ?? 0);
             $fp = (int)($inv['final_price'] ?? $bp);
-            $hasAgency = !empty($inv['agency_id']) && ($inv['agency_discount_percent'] ?? 0) > 0;
-            $threshold = $hasAgency ? $fp : $bp;
-            if (($inv['status'] ?? '') === 'paid') $paid = $threshold;
+            $paid = (int)($inv['total_paid'] ?? 0);
+            $threshold = $fp;
             $due = max(0, $threshold - $paid);
 
             $totalBase += $bp;
@@ -1067,11 +1125,11 @@ if ($action === 'get-agency-report') {
                     'partialCount' => $partialCount,
                     'pendingCount' => $pendingCount,
                     'totalBaseRevenue' => $totalBase,
-                    'totalBaseRevenueFmt' => number_format($totalBase) . ' ₫',
+                    'totalBaseRevenueFmt' => vnd($totalBase) . ' ₫',
                     'totalPaid' => $totalPaid,
-                    'totalPaidFmt' => number_format($totalPaid) . ' ₫',
+                    'totalPaidFmt' => vnd($totalPaid) . ' ₫',
                     'totalDue' => $totalDue,
-                    'totalDueFmt' => number_format($totalDue) . ' ₫',
+                    'totalDueFmt' => vnd($totalDue) . ' ₫',
                     'collectionRate' => $collectionRate,
                 ],
                 'invoices' => $allInvoices,
@@ -1081,7 +1139,7 @@ if ($action === 'get-agency-report') {
 
     // Nếu là Agency, tự detect
     if (!$agencyId && in_array($auth['role'] ?? '', ['AGENCY', 'agency'])) {
-        $ag = DB::selectOne("SELECT id FROM agents WHERE user_id = ?", [dbGetUserId($auth)]);
+        $ag = DB::selectOne("SELECT id FROM agents WHERE email = ? OR agent_code = ?", [$auth['email'] ?? '', $auth['email'] ?? '']);
         if (!$ag) {
             // Try by email
             $user = DB::selectOne("SELECT email FROM users WHERE id = ?", [dbGetUserId($auth)]);
@@ -1118,46 +1176,55 @@ if ($action === 'get-agency-report') {
     $discPercent = (float)$agency['commission_rate'];
 
     // Get invoices for this agency
+    $agencyName = $agency['name'] ?? '';
     $invoices = DB::select(
         "SELECT i.*, e.enrollment_code, e.student_id, e.course_id, e.payment_status,
-                COALESCE(i.student_name, u.full_name) AS student_name,
+                COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name,
                 COALESCE(i.student_phone, u.phone) AS student_phone,
                 c.name AS course_name, c.tuition_fee
          FROM invoices i
          JOIN enrollments e ON i.enrollment_id = e.id
          LEFT JOIN users u ON e.student_id = u.id
          JOIN courses c ON e.course_id = c.id
-         WHERE i.agency_id = ?
+         WHERE (i.agency_id = ? OR i.agency_name = ?)
            AND i.status NOT IN ('exempt', 'cancelled')
            AND i.base_price > 0
          ORDER BY i.created_at DESC",
-        [(string)$agencyId]
+        [(string)$agencyId, $agencyName]
     );
 
     $totalBase = 0; $totalFinal = 0; $totalPaid = 0; $totalDue = 0;
-    $totalOwesToSmc = 0;
+    $totalOwesToSmc = 0; $totalDiscount = 0;
     $paidCount = 0; $partialCount = 0; $pendingCount = 0;
     $byCourse = [];
 
     foreach ($invoices as &$inv) {
         $bp = (int)($inv['base_price'] ?? 0);
+        $fp = (int)($inv['final_price'] ?? $bp);
         $paid = (int)($inv['total_paid'] ?? 0);
-        if (($inv['status'] ?? '') === 'paid') $paid = $bp;
-        $due = max(0, $bp - $paid);
+        $due = max(0, $fp - $paid);
         $invDiscPercent = (float)($inv['agency_discount_percent'] ?? $discPercent);
         $owesToSmc = $bp > 0 ? (int)($bp * (1 - $invDiscPercent / 100)) : 0;
+        $discAmt = $bp > 0 ? (int)($bp * $invDiscPercent / 100) : 0;
 
         $totalBase += $bp;
         $totalPaid += $paid;
         $totalDue += $due;
         $totalOwesToSmc += $owesToSmc;
+        $totalDiscount += $discAmt;
 
+        $inv['studentId'] = (string)($inv['student_id'] ?? '');
         $inv['studentName'] = $inv['student_name'];
+        $inv['studentEmail'] = $inv['student_email'] ?? '';
+        $inv['studentPhone'] = $inv['student_phone'] ?? '';
+        $inv['courseId'] = (string)($inv['course_id'] ?? '');
         $inv['courseName'] = $inv['course_name'];
         $inv['basePrice'] = $bp;
         $inv['totalPaid'] = $paid;
         $inv['remainingDue'] = $due;
         $inv['owesToSmc'] = $owesToSmc;
+        $inv['agencyDiscountAmount'] = $discAmt;
+        $inv['agencyDiscountPercent'] = $invDiscPercent;
         $inv['amount'] = $bp;
         $inv['actualAmount'] = (int)($inv['final_price'] ?? $bp);
         $inv['step'] = dbComputeStep($inv['status'] ?? 'pending', $paid, $bp);
@@ -1191,13 +1258,15 @@ if ($action === 'get-agency-report') {
                 'partialCount' => $partialCount,
                 'pendingCount' => $pendingCount,
                 'totalBaseRevenue' => $totalBase,
-                'totalBaseRevenueFmt' => number_format($totalBase) . ' ₫',
+                'totalBaseRevenueFmt' => vnd($totalBase) . ' ₫',
                 'totalPaid' => $totalPaid,
-                'totalPaidFmt' => number_format($totalPaid) . ' ₫',
+                'totalPaidFmt' => vnd($totalPaid) . ' ₫',
                 'totalDue' => $totalDue,
-                'totalDueFmt' => number_format($totalDue) . ' ₫',
+                'totalDueFmt' => vnd($totalDue) . ' ₫',
+                'totalDiscount' => $totalDiscount,
+                'totalDiscountFmt' => vnd($totalDiscount) . ' ₫',
                 'totalOwesToSmc' => $totalOwesToSmc,
-                'totalOwesToSmcFmt' => number_format($totalOwesToSmc) . ' ₫',
+                'totalOwesToSmcFmt' => vnd($totalOwesToSmc) . ' ₫',
                 'collectionRate' => $collectionRate,
             ],
             'invoices' => $invoices,
@@ -1227,7 +1296,7 @@ if ($action === 'list-transactions') {
         $total = (int)(DB::selectOne("SELECT COUNT(*) AS c FROM payments p {$whereSQL}", $params)['c'] ?? 0);
 
         $transactions = DB::select(
-            "SELECT p.*, COALESCE(i.student_name, u.full_name) AS student_name, e.enrollment_code,
+            "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), i.student_name) AS student_name, e.enrollment_code,
                     i.agency_id, i.agency_name
              FROM payments p
              JOIN enrollments e ON p.enrollment_id = e.id
@@ -1257,7 +1326,7 @@ if ($action === 'list-transactions') {
 // POST Body: { enrollmentId* }
 // =====================================================================
 if ($action === 'freeze-invoice' || $action === 'unfreeze-invoice') {
-    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    $auth = dbRequireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'admin', 'staff', 'accountant']);
     if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
 
     $input = dbInput();
@@ -1309,7 +1378,7 @@ if ($action === 'freeze-invoice' || $action === 'unfreeze-invoice') {
 // POST Body: { enrollmentId* }
 // =====================================================================
 if ($action === 'mark-exempt' || $action === 'unmark-exempt') {
-    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    $auth = dbRequireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'admin', 'staff', 'accountant']);
     if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
 
     $input = dbInput();
@@ -1322,6 +1391,16 @@ if ($action === 'mark-exempt' || $action === 'unmark-exempt') {
         $enr = DB::selectOne(
             "SELECT id FROM enrollments WHERE student_id = ? AND course_id = ? ORDER BY created_at DESC LIMIT 1",
             [$studentId, $courseId]
+        );
+        if ($enr) {
+            $enrollmentId = (int)$enr['id'];
+        }
+    }
+    // Fallback: chỉ có studentId → tra enrollment gần nhất của học viên
+    if (!$enrollmentId && $studentId) {
+        $enr = DB::selectOne(
+            "SELECT id FROM enrollments WHERE student_id = ? ORDER BY created_at DESC LIMIT 1",
+            [$studentId]
         );
         if ($enr) {
             $enrollmentId = (int)$enr['id'];
@@ -1478,22 +1557,24 @@ if ($action === 'agency-students') {
     $auth = dbAuth();
     if (!$auth) dbJson(['error' => 'Unauthorized'], 401);
 
-    $agencyId = (int)($_GET['agencyId'] ?? 0);
+    $isAgency = in_array($auth['role'] ?? '', ['AGENCY', 'agency']);
+    // Đại lý chỉ được xem học viên của CHÍNH MÌNH — bỏ qua agencyId từ query
+    $agencyId = $isAgency ? 0 : (int)($_GET['agencyId'] ?? 0);
 
     if (!$agencyId && in_array($auth['role'] ?? '', ['AGENCY', 'agency'])) {
-        $ag = DB::selectOne("SELECT id FROM agents WHERE user_id = ?", [dbGetUserId($auth)]);
-        if ($ag) $agencyId = (int)$ag['id'];
+        $ag = DB::selectOne("SELECT id, name FROM agents WHERE email = ? OR agent_code = ?", [$auth['email'] ?? '', $auth['email'] ?? '']);
+        if ($ag) { $agencyId = (int)$ag['id']; $agencyNameForFilter = $ag['name']; }
     }
 
     $where = "u.role = 'student'";
     $params = [];
     if ($agencyId) {
-        // Tìm học viên qua invoices có agency_id này
+        // Tìm học viên qua invoices có agency_id hoặc agency_name này
         $studentIds = DB::select(
             "SELECT DISTINCT e.student_id FROM enrollments e
              JOIN invoices i ON i.enrollment_id = e.id
-             WHERE i.agency_id = ?",
-            [(string)$agencyId]
+             WHERE i.agency_id = ? OR i.agency_name = ?",
+            [(string)$agencyId, $agencyNameForFilter ?? '']
         );
         if (empty($studentIds)) {
             dbJson(['students' => [], 'total' => 0]);
@@ -1528,7 +1609,7 @@ if ($action === 'agency-students') {
 // POST Body: { enrollmentId*, basePrice?, note?, agencyId? }
 // =====================================================================
 if ($action === 'update-invoice') {
-    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    $auth = dbRequireRole(['ADMIN', 'STAFF', 'ACCOUNTANT', 'admin', 'staff', 'accountant']);
     if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
 
     $input = dbInput();
@@ -1831,7 +1912,7 @@ if ($action === 'staff-cash-summary') {
         'data' => [
             'staffId' => $staffId,
             'totalHolding' => (int)($summary['total_holding'] ?? 0),
-            'totalHoldingFmt' => number_format((int)($summary['total_holding'] ?? 0)) . ' ₫',
+            'totalHoldingFmt' => vnd((int)($summary['total_holding'] ?? 0)) . ' ₫',
             'pendingCount' => (int)($summary['pending_count'] ?? 0),
             'oldestHeldSince' => $summary['oldest_held_since'] ?? null,
             'pendingPayments' => $pending,
@@ -1917,9 +1998,9 @@ if ($action === 'accountant-cash-ledger') {
         'overview' => [
             'activeStaffCount' => (int)($overview['active_staff_count'] ?? 0),
             'unremittedCash' => (int)($overview['unremitted_cash'] ?? 0),
-            'unremittedCashFmt' => number_format((int)($overview['unremitted_cash'] ?? 0)) . ' ₫',
+            'unremittedCashFmt' => vnd((int)($overview['unremitted_cash'] ?? 0)) . ' ₫',
             'reconciledCash' => (int)($overview['reconciled_cash'] ?? 0),
-            'reconciledCashFmt' => number_format((int)($overview['reconciled_cash'] ?? 0)) . ' ₫',
+            'reconciledCashFmt' => vnd((int)($overview['reconciled_cash'] ?? 0)) . ' ₫',
         ],
         'staffHoldings' => $staffHoldings,
         'total' => $total,
@@ -2044,6 +2125,69 @@ if ($action === 'settle-commission') {
         // sp_settle_commission sẽ throw nếu không có hoa hồng cần quyết toán
         dbJson(['error' => $e->getMessage()], 400);
     }
+}
+
+// =====================================================================
+// ASSIGN COURSE (Xếp khóa cho học viên chưa có khóa — Nhân viên/Admin)
+// POST Body: { studentId*, courseId* }
+// =====================================================================
+if ($action === 'assign-course') {
+    $auth = dbRequireRole(['ADMIN', 'STAFF', 'admin', 'staff']);
+    if ($method !== 'POST') dbJson(['error' => 'POST required'], 405);
+
+    $input = dbInput();
+    $studentId = (int)($input['studentId'] ?? 0);
+    $courseId = (int)($input['courseId'] ?? 0);
+    if (!$studentId) dbJson(['error' => 'Thiếu studentId'], 400);
+    if (!$courseId) dbJson(['error' => 'Thiếu courseId'], 400);
+
+    $student = DB::selectOne("SELECT * FROM users WHERE id = ? AND role = 'student'", [$studentId]);
+    if (!$student) dbJson(['error' => 'Không tìm thấy học viên'], 404);
+
+    $course = DB::selectOne("SELECT * FROM courses WHERE id = ?", [$courseId]);
+    if (!$course) dbJson(['error' => 'Không tìm thấy khóa học'], 404);
+
+    $existing = DB::selectOne("SELECT id FROM enrollments WHERE student_id = ? AND course_id = ?", [$studentId, $courseId]);
+    if ($existing) dbJson(['error' => 'Học viên đã có hồ sơ cho khóa này'], 409);
+
+    $userId = dbGetUserId($auth);
+    $staff = DB::selectOne("SELECT full_name FROM users WHERE id = ?", [$userId]);
+
+    // Sinh mã duy nhất (MAX-based, tránh trùng)
+    $enrSeq = (int)(DB::selectOne("SELECT MAX(CAST(RIGHT(enrollment_code, 4) AS UNSIGNED)) m FROM enrollments WHERE enrollment_code LIKE 'HS-%'")['m'] ?? 0) + 1;
+    $enrCode = 'HS-' . date('Y') . '-' . str_pad($enrSeq, 4, '0', STR_PAD_LEFT);
+    $stages = json_encode(['enrollment'=>['status'=>'pending'],'theory'=>['status'=>'pending'],'practice'=>['status'=>'pending'],'exam'=>['status'=>'pending'],'certification'=>['status'=>'pending']], JSON_UNESCAPED_UNICODE);
+
+    DB::begin();
+    try {
+        $enrId = (int)DB::insert(
+            "INSERT INTO enrollments (enrollment_code, student_id, course_id, total_amount, final_amount, paid_amount, payment_status, enrollment_status, eligible_for_exam, training_stages, created_by)
+             VALUES (?,?,?,?,?,0,'unpaid','pending',0,?,?)",
+            [$enrCode, $studentId, $courseId, $course['tuition_fee'], $course['tuition_fee'], $stages, $userId]
+        );
+
+        $invSeq = (int)(DB::selectOne("SELECT MAX(CAST(RIGHT(invoice_code, 4) AS UNSIGNED)) m FROM invoices WHERE invoice_code LIKE 'INV-%'")['m'] ?? 0) + 1;
+        $invCode = 'INV-' . date('Y') . '-' . str_pad($invSeq, 4, '0', STR_PAD_LEFT);
+        DB::insert(
+            "INSERT INTO invoices (invoice_code, enrollment_id, base_price, discount_amount, final_price, total_paid, status, student_name, student_email, student_phone, created_by)
+             VALUES (?,?,?,0,?,0,'pending',?,?,?,?)",
+            [$invCode, $enrId, $course['tuition_fee'], $course['tuition_fee'], $student['full_name'], $student['email'], $student['phone'], $userId]
+        );
+
+        // Đánh dấu Nhân viên đã duyệt hồ sơ (step='staff') → chuyển sang Kế toán
+        DB::execute("UPDATE enrollments SET approval_staff_by = ?, approval_staff_at = NOW(), approval_staff_name = ?, updated_at = NOW() WHERE id = ?",
+            [$userId, $staff['full_name'] ?? '', $enrId]);
+
+        // Kích hoạt tài khoản học viên
+        DB::execute("UPDATE users SET status = 'active', updated_at = NOW() WHERE id = ?", [$studentId]);
+
+        DB::commit();
+    } catch (Exception $e) {
+        DB::rollback();
+        dbJson(['error' => 'Lỗi: ' . $e->getMessage()], 500);
+    }
+
+    dbJson(['success' => true, 'message' => 'Đã xếp khóa và chuyển hồ sơ cho Kế toán', 'enrollmentId' => $enrId, 'enrollmentCode' => $enrCode]);
 }
 
 // Fallback

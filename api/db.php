@@ -7,8 +7,31 @@
 
 class DB {
     private static ?PDO $instance = null;
+    private static ?bool $available = null;
+    private static ?string $lastError = null;
     private static array $queries = [];
     private static float $totalTime = 0;
+
+    /** Check if MySQL is available without throwing */
+    public static function isAvailable(): bool {
+        if (self::$available !== null) return self::$available;
+        try {
+            self::get();
+            self::$available = true;
+        } catch (\PDOException $e) {
+            self::$available = false;
+            self::$lastError = $e->getMessage();
+        } catch (\Exception $e) {
+            self::$available = false;
+            self::$lastError = $e->getMessage();
+        }
+        return self::$available;
+    }
+
+    /** Get last connection error */
+    public static function getLastError(): ?string {
+        return self::$lastError;
+    }
 
     /** Get PDO instance (singleton) */
     public static function get(): PDO {
@@ -185,6 +208,17 @@ class DB {
      * Kiểm tra kết nối & phiên bản MySQL
      */
     public static function health(): array {
+        if (!self::isAvailable()) {
+            return [
+                'status' => 'unavailable',
+                'mysql_version' => '',
+                'database' => '',
+                'tables' => 0,
+                'error' => self::$lastError ?? 'Unknown error',
+                'queries' => count(self::$queries),
+                'query_time_ms' => round(self::$totalTime * 1000, 2),
+            ];
+        }
         try {
             $pdo = self::get();
             $version = $pdo->query("SELECT VERSION() AS v")->fetch()['v'];

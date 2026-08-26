@@ -19,32 +19,28 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 
 // ─── Auth Helpers ───
-$envFile = __DIR__ . '/env.php';
-$env = (file_exists($envFile) && is_array($cfg = include $envFile)) ? $cfg : [];
-$secretKey = $env['SECRET_KEY'] ?? getenv('SMC_SECRET_KEY') ?: 'fallback';
+// Xác thực dùng chung auth-lib.php. File này KHÔNG tự ký/kiểm token:
+// auth-lib dừng hẳn khi thiếu SECRET_KEY, còn bản tự viết trước đây rơi về
+// khoá mặc định nên token giả vẫn qua được.
+require_once __DIR__ . '/auth-lib.php';
 
 function apiGetToken() {
-    if (!empty($_COOKIE['smc_token'])) return $_COOKIE['smc_token'];
+    // REDIRECT_HTTP_AUTHORIZATION: Apache bỏ header Authorization gốc khi request
+    // đi qua mod_rewrite, chỉ còn bản có tiền tố REDIRECT_.
+    $candidates = [];
     $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-    return str_replace('Bearer ', '', $h);
+    $headerToken = str_replace('Bearer ', '', $h);
+    if ($headerToken !== '') $candidates[] = $headerToken;
+    if (!empty($_COOKIE['smc_token'])) $candidates[] = $_COOKIE['smc_token'];
+
+    foreach ($candidates as $token) {
+        if (alVerifyToken($token) !== null) return $token;
+    }
+    return $candidates[0] ?? '';
 }
 
 function apiVerifyToken($token) {
-    global $secretKey;
-    $parts = explode('.', $token);
-    if (count($parts) === 3) {
-        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
-        if (!$payload || ($payload['exp'] ?? 0) < time()) return null;
-        $sig = hash_hmac('sha256', $parts[0] . '.' . $parts[1], $secretKey, true);
-        return hash_equals(base64_decode(strtr($parts[2], '-_', '+/')), $sig) ? $payload : null;
-    }
-    if (count($parts) === 2) {
-        list($b64, $sig) = $parts;
-        if (!hash_equals(hash_hmac('sha256', $b64, $secretKey), $sig)) return null;
-        $payload = json_decode(base64_decode($b64), true);
-        return (!$payload || ($payload['exp'] ?? 0) < time()) ? null : $payload;
-    }
-    return null;
+    return alVerifyToken($token);
 }
 
 function apiAuth() {
@@ -134,6 +130,10 @@ if ($resource === 'enrollments') {
                               LEFT JOIN users us ON e.sale_id = us.id
                               WHERE e.id = ?", [(int)$id]);
         if (!$enr) apiJson(['success' => false, 'message' => 'Không tìm thấy hồ sơ'], 404);
+        // Học viên chỉ được xem hồ sơ của CHÍNH MÌNH
+        if (strtolower($auth['role'] ?? '') === 'student' && (int)($enr['student_id'] ?? 0) !== (int)($auth['id'] ?? 0)) {
+            apiJson(['success' => false, 'message' => 'Không có quyền xem hồ sơ này'], 403);
+        }
         // Lấy payment schedules
         $enr['payment_schedules'] = DB::select("SELECT * FROM payment_schedules WHERE enrollment_id = ? ORDER BY installment_num", [$id]);
         // Lấy payment history
@@ -306,27 +306,38 @@ if ($resource === 'agents') {
         // GET /api/v1/agents/{id}/commissions?month=2026-08
         $auth = apiRequireRole(['admin', 'accountant', 'sale', 'staff']);
         $agentId = (int)$id;
-        $month = $query['month'] ?? date('Y-m');
+        $month = $query['month'] ?? '';
 
         $ag = DB::selectOne("SELECT * FROM agents WHERE id = ?", [$agentId]);
         if (!$ag) apiJson(['success' => false, 'message' => 'Không tìm thấy đại lý'], 404);
 
-        $data = DB::selectOne("SELECT COALESCE(SUM(cd.payment_amount), 0) AS total_collected,
-                               COALESCE(SUM(cd.commission_amount), 0) AS commission_amount,
-                               COUNT(DISTINCT cd.enrollment_id) AS total_students
-                               FROM commission_details cd
-                               JOIN payments p ON cd.payment_id = p.id
-                               WHERE cd.agent_id = ? AND cd.period = ? AND p.status = 'approved'",
-                               [$agentId, $month]);
+        // Tổng học viên + tổng nộp thực tế của đại lý (từ invoices/enrollments)
+        $stats = DB::selectOne(
+            "SELECT COUNT(DISTINCT e.student_id) AS total_students,
+                    COALESCE(SUM(e.paid_amount), 0) AS total_collected
+             FROM invoices i
+             JOIN enrollments e ON i.enrollment_id = e.id
+             WHERE i.agency_id = ? AND i.status NOT IN ('exempt','cancelled')",
+            [$agentId]
+        );
+
+        // Tổng hoa hồng (commission_details) — theo kỳ nếu có
+        $commSql = "SELECT COALESCE(SUM(cd.commission_amount), 0) AS commission_amount
+                    FROM commission_details cd
+                    JOIN payments p ON cd.payment_id = p.id
+                    WHERE cd.agent_id = ? AND p.status = 'approved'";
+        $comm = ($month !== '')
+            ? DB::selectOne($commSql . " AND cd.period = ?", [$agentId, $month])
+            : DB::selectOne($commSql, [$agentId]);
 
         apiJson(['data' => [
             'agent_code' => $ag['agent_code'],
             'agent_name' => $ag['name'],
             'commission_rate' => (float)$ag['commission_rate'],
-            'period' => $month,
-            'total_students' => (int)($data['total_students'] ?? 0),
-            'total_collected' => (int)($data['total_collected'] ?? 0),
-            'commission_amount' => (int)($data['commission_amount'] ?? 0),
+            'period' => ($month !== '' ? $month : 'all'),
+            'total_students' => (int)($stats['total_students'] ?? 0),
+            'total_collected' => (int)($stats['total_collected'] ?? 0),
+            'commission_amount' => (int)($comm['commission_amount'] ?? 0),
         ]]);
     }
 
@@ -359,20 +370,48 @@ if ($resource === 'agents') {
     if ($method === 'GET') {
         // GET /api/v1/agents
         $auth = apiRequireRole(['admin', 'accountant', 'sale', 'staff']);
-        $items = DB::select("SELECT * FROM agents WHERE status = 'active' ORDER BY name");
+        $items = DB::select(
+            "SELECT a.*,
+               (SELECT COUNT(DISTINCT e.student_id)
+                FROM invoices i JOIN enrollments e ON i.enrollment_id = e.id
+                WHERE i.agency_id = CAST(a.id AS CHAR)) AS student_count
+             FROM agents a
+             WHERE a.status = 'active'
+             ORDER BY a.name"
+        );
         apiJson(['data' => $items]);
     }
 
     if ($method === 'POST') {
-        // POST /api/v1/agents → create
+        // POST /api/v1/agents → tạo đại lý + tài khoản đăng nhập (role agency)
         $auth = apiRequireRole(['admin']);
         $input = apiInput();
-        $code = $input['agent_code'] ?? ('DL-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6)));
-        $id = DB::insert("INSERT INTO agents (agent_code, name, phone, email, address, commission_rate) VALUES (?, ?, ?, ?, ?, ?)",
-            [$code, $input['name'], $input['phone'] ?? '', $input['email'] ?? '', $input['address'] ?? '',
-             (float)($input['commission_rate'] ?? 0)]);
-        $ag = DB::selectOne("SELECT * FROM agents WHERE id = ?", [(int)$id]);
-        apiJson(['data' => $ag, 'message' => 'Tạo đại lý thành công'], 201);
+        $name = trim($input['name'] ?? '');
+        $email = trim($input['email'] ?? '');
+        $phone = $input['phone'] ?? '';
+        $password = $input['password'] ?? '123456';
+        if (!$name || !$email) apiJson(['success' => false, 'message' => 'Tên và email là bắt buộc'], 400);
+        if (DB::selectOne("SELECT id FROM users WHERE email = ? OR phone = ?", [$email, $email])) {
+            apiJson(['success' => false, 'message' => 'Email đã được sử dụng bởi tài khoản khác'], 409);
+        }
+        $code = $input['agent_code'] ?? $input['code'] ?? ('DL-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6)));
+        DB::begin();
+        try {
+            $userCode = 'USR-' . date('Y') . '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $userId = (int)DB::insert(
+                "INSERT INTO users (user_code, full_name, email, phone, password_hash, role, status) VALUES (?,?,?,?,?,?,'active')",
+                [$userCode, trim($input['contact_person'] ?? '') ?: $name, $email, $phone, $hash, 'agency']
+            );
+            $id = DB::insert("INSERT INTO agents (agent_code, name, contact_person, phone, email, address, commission_rate, tax_code, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$code, $name, trim($input['contact_person'] ?? ''), $phone, $email, $input['address'] ?? '', (float)($input['commission_rate'] ?? 0), $input['tax_code'] ?? '', $input['notes'] ?? '']);
+            DB::commit();
+            $ag = DB::selectOne("SELECT * FROM agents WHERE id = ?", [(int)$id]);
+            apiJson(['data' => $ag, 'userId' => (string)$userId, 'message' => 'Tạo đại lý thành công'], 201);
+        } catch (Exception $e) {
+            DB::rollback();
+            apiJson(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
+        }
     }
 }
 

@@ -309,9 +309,33 @@ function sanitizeUser($u) {
 
 function findUserByEmail($email) {
     $users = loadData('users');
+    // Normalize input: trim + Unicode NFC
+    $email = trim($email);
+    if (class_exists('Normalizer')) {
+        $email = Normalizer::normalize($email, Normalizer::FORM_C);
+    }
+
+    // Normalize phone number: strip all non-digit chars, keep leading 0
+    $emailDigits = preg_replace('/\D/', '', $email);
+    $isPhoneInput = preg_match('/^\d{9,11}$/', $emailDigits);
+
     foreach ($users as $u) {
         if (($u['status'] ?? '') === 'REJECTED') continue;
-        if (strtolower($u['email']) === strtolower($email) || ($u['phone'] ?? '') === $email) return $u;
+
+        $uEmail = $u['email'] ?? '';
+        if (class_exists('Normalizer')) {
+            $uEmail = Normalizer::normalize($uEmail, Normalizer::FORM_C);
+        }
+
+        if (strtolower($uEmail) === strtolower($email)) return $u;
+
+        // Phone comparison: normalize both sides (strip non-digits)
+        if ($isPhoneInput) {
+            $uPhoneDigits = preg_replace('/\D/', '', $u['phone'] ?? '');
+            if ($uPhoneDigits && $uPhoneDigits === $emailDigits) return $u;
+        } else {
+            if (($u['phone'] ?? '') === $email) return $u;
+        }
     }
     return null;
 }

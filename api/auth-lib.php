@@ -34,13 +34,29 @@ if (empty(AL_SECRET_KEY)) {
 
 // ──── Token Helpers ────
 
-/** Đọc token từ HttpOnly cookie (ưu tiên) hoặc Authorization header */
+/** Đọc token — ưu tiên token hợp lệ, tránh cookie stale làm hỏng auth.
+ *  Frontend luôn gửi Authorization header (token mới từ localStorage),
+ *  trong khi cookie HttpOnly có thể bị stale/hết hạn. Dùng token hợp lệ đầu tiên. */
 function alGetToken() {
-    if (!empty($_COOKIE['smc_token'])) {
-        return $_COOKIE['smc_token'];
-    }
+    $candidates = [];
+
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    return str_replace('Bearer ', '', $header);
+    $headerToken = str_replace('Bearer ', '', $header);
+    if ($headerToken !== '') {
+        $candidates[] = $headerToken;
+    }
+
+    if (!empty($_COOKIE['smc_token'])) {
+        $candidates[] = $_COOKIE['smc_token'];
+    }
+
+    foreach ($candidates as $token) {
+        if (alVerifyToken($token) !== null) {
+            return $token;
+        }
+    }
+
+    return $candidates[0] ?? '';
 }
 
 /** Set HttpOnly cookie chứa JWT token — SameSite=Lax hỗ trợ email links */
@@ -75,11 +91,12 @@ function alClearTokenCookie() {
 function alCreateToken($user) {
     $header  = ['alg' => 'HS256', 'typ' => 'JWT'];
     $payload = [
-        'sub'   => $user['id'],
-        'email' => $user['email'] ?? '',
-        'role'  => $user['role'] ?? '',
-        'iat'   => time(),
-        'exp'   => time() + 86400,
+        'sub'    => $user['id'],
+        'userId' => $user['id'],        // MySQL BIGINT compatibility
+        'email'  => $user['email'] ?? '',
+        'role'   => $user['role'] ?? '',
+        'iat'    => time(),
+        'exp'    => time() + 86400,
     ];
 
     $b64h = rtrim(strtr(base64_encode(json_encode($header)), '+/', '-_'), '=');
@@ -109,9 +126,10 @@ function alVerifyToken($token) {
         $payload = json_decode(base64_decode($b64), true);
         if (!$payload || ($payload['exp'] ?? 0) < time()) return null;
         return [
-            'id'    => $payload['sub'] ?? $payload['id'] ?? '',
-            'email' => $payload['email'] ?? '',
-            'role'  => $payload['role'] ?? '',
+            'id'     => $payload['sub'] ?? $payload['id'] ?? '',
+            'userId' => $payload['userId'] ?? $payload['sub'] ?? $payload['id'] ?? '',
+            'email'  => $payload['email'] ?? '',
+            'role'   => $payload['role'] ?? '',
         ];
     }
 
@@ -136,9 +154,10 @@ function alVerifyToken($token) {
     if ($exp > 0 && $exp < time()) return null;
 
     return [
-        'id'    => $payload['sub'] ?? $payload['id'] ?? '',
-        'email' => $payload['email'] ?? '',
-        'role'  => $payload['role'] ?? '',
+        'id'     => $payload['sub'] ?? $payload['id'] ?? '',
+        'userId' => $payload['userId'] ?? $payload['sub'] ?? $payload['id'] ?? '',
+        'email'  => $payload['email'] ?? '',
+        'role'   => $payload['role'] ?? '',
     ];
 }
 
