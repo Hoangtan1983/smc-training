@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { apiGetPosts } from '../data/api';
+import { apiGetPosts, apiGetFiles, apiFileUrl } from '../data/api';
 import {
   Shield,
   Users,
@@ -12,6 +12,7 @@ import {
   CheckCircle,
   ArrowRight,
   Star,
+  Video,
 } from 'lucide-react';
 
 const stats = [
@@ -78,6 +79,7 @@ const process = [
 export default function HomePage() {
   const { user } = useAuth();
   const [news, setNews] = useState([]);
+  const [videos, setVideos] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -89,6 +91,24 @@ export default function HomePage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGetFiles('videos');
+        setVideos(Array.isArray(data) ? data : []);
+      } catch {
+        setVideos([]);
+      }
+    })();
+  }, []);
+
+  // Trích mã video từ một URL YouTube (watch/embed/shorts/youtu.be)
+  const youtubeId = (url) => {
+    if (!url) return null;
+    const m = String(url).match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/);
+    return m ? m[1] : null;
+  };
 
   return (
     <div>
@@ -300,6 +320,48 @@ export default function HomePage() {
           </div>
         </section>
       )}
+
+      {/* Video — lấy từ hệ thống quản trị tư liệu (category "videos") */}
+      <section className="py-20 sm:py-32 bg-[#F2F2F7]">
+        <div className="page-container">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <h2 className="section-title">Video</h2>
+            <p className="section-subtitle mx-auto">Video hoạt động đào tạo và hướng dẫn của SMC Training</p>
+          </div>
+
+          {videos.length === 0 ? (
+            <div className="max-w-3xl mx-auto text-center py-8">
+              <Video className="w-14 h-14 mx-auto mb-4 text-gray-300" />
+              <p className="text-gray-500">Video sẽ được cập nhật tại đây.</p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
+              {videos.map(v => {
+                const yt = youtubeId(v.description);
+                return (
+                  <div key={v.id} className="bg-white rounded-2xl p-4 shadow-ios">
+                    {yt ? (
+                      <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                        <iframe
+                          className="w-full h-full"
+                          src={`https://www.youtube.com/embed/${yt}`}
+                          title={v.title || v.name}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <video controls className="w-full aspect-video rounded-xl bg-black" src={apiFileUrl(v.id)} />
+                    )}
+                    <h3 className="font-semibold text-[#1C1C1E] mt-3 text-center">{v.title || v.name}</h3>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* CTA Section — iOS style */}
       <section className="py-20 sm:py-32 relative overflow-hidden">

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Download, Trash2, FileText, Search, Link as LinkIcon, Pencil, X, Image as ImageIcon, FolderOpen, Lock, GraduationCap } from 'lucide-react';
+import { Upload, Download, Trash2, FileText, Search, Link as LinkIcon, Pencil, X, Image as ImageIcon, FolderOpen, Lock, GraduationCap, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiUploadFile, apiGetFiles, apiDeleteFile, apiUpdateFile, apiFileUrl } from '../../data/api';
 
@@ -8,6 +8,7 @@ const TABS = [
   { key: 'material-a', label: 'Hạng A (VLOS)', icon: GraduationCap, accept: '.pdf,.doc,.docx,.ppt,.pptx,.mp4,.zip', hint: 'Học viên hạng A mới nhìn thấy' },
   { key: 'material-b', label: 'Hạng B (BVLOS)', icon: GraduationCap, accept: '.pdf,.doc,.docx,.ppt,.pptx,.mp4,.zip', hint: 'Học viên hạng B mới nhìn thấy' },
   { key: 'public-images', label: 'Hình ảnh công khai', icon: ImageIcon, accept: '.jpg,.jpeg,.png,.gif', hint: 'Hiện trên trang web, ai cũng xem được' },
+  { key: 'videos', label: 'Video', icon: Video, accept: '.mp4', hint: 'Video hiển thị ở mục Video trên trang chủ. Dán link YouTube vào ô chú thích để nhúng' },
   { key: 'shared', label: 'Kho dùng chung', icon: FolderOpen, accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp4,.zip,.rar,.csv,.txt', hint: 'Lấy link gửi cho bất kỳ ai' },
   { key: 'internal', label: 'Tài liệu nội bộ', icon: Lock, accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.csv,.txt', hint: 'Chỉ nhân viên nội bộ nhìn thấy' },
 ];
