@@ -26,7 +26,7 @@ function jsonInput() { return alJsonInput(); }
 /** Vệ sinh HTML người dùng soạn: chỉ giữ thẻ an toàn + gỡ thuộc tính nguy hiểm. */
 function sanitizeHtml($html) {
     $html = (string)$html;
-    $html = strip_tags($html, '<p><br><b><strong><i><em><u><h2><h3><h4><ul><ol><li><a><img><blockquote><pre><code><table><thead><tbody><tr><th><td>');
+    $html = strip_tags($html, '<p><br><b><strong><i><em><u><h2><h3><h4><ul><ol><li><a><img><figure><figcaption><blockquote><pre><code><table><thead><tbody><tr><th><td>');
     // Loại bỏ mọi thuộc tính on* (onclick, onerror...) và các scheme javascript:
     $html = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
     $html = preg_replace('/(href|src)\s*=\s*(["\']?)\s*javascript:[^"\'>\s]*\2/i', '$1=""', $html);

@@ -43,9 +43,15 @@ export default function RichTextEditor({ value = '', onChange }) {
     }
   };
 
+  const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
   const insertImage = (file) => {
+    const alt = escHtml(file.title || file.name || '');
+    const caption = (window.prompt('Chú thích ảnh (bỏ trống nếu không cần):') || '').trim();
+    const img = `<img src="${apiFileUrl(file.id)}" alt="${alt}" />`;
+    const html = caption ? `<figure>${img}<figcaption>${escHtml(caption)}</figcaption></figure>` : img;
     editorRef.current?.focus();
-    document.execCommand('insertHTML', false, `<img src="${apiFileUrl(file.id)}" alt="${(file.title || file.name).replace(/"/g, '')}" />`);
+    document.execCommand('insertHTML', false, html);
     onChange(editorRef.current?.innerHTML || '');
     setShowImagePicker(false);
   };
