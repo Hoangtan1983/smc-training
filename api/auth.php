@@ -1678,14 +1678,14 @@ if (($parts[0] ?? '') === 'upload') {
     }
 
     $mysqlId = is_numeric($auth['id']) ? (int)$auth['id'] : 0;
-    DB::insert(
+    $newFileId = DB::insert(
         "INSERT INTO uploaded_files (original_name, stored_name, stored_path, title, description, mime_type, size_bytes, category, uploaded_by)
          VALUES (?,?,?,?,?,?,?,?,?)",
         [$originalName, $storedName, $storedPath, $_POST['title'] ?? $originalName,
          $_POST['description'] ?? '', $file['type'] ?? '', $file['size'] ?? 0, $category, $mysqlId]
     );
 
-    jsonResponse(['success' => true, 'path' => $storedPath, 'name' => $originalName], 201);
+    jsonResponse(['success' => true, 'id' => $newFileId, 'path' => $storedPath, 'name' => $originalName], 201);
 }
 
 // ──── FILES (danh sách / sửa / xoá) ────

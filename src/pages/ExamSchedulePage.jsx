@@ -4,7 +4,7 @@ import { apiGetPosts } from '../data/api';
 
 const exams = [
   { date: '15/08/2026', type: 'Sát hạch Hạng A', location: 'SMC Training Center', status: 'Đang đăng ký', statusColor: 'bg-green-100 text-green-700' },
-  { date: '30/08/2026', type: 'Sát hạch Hạng B - VLOS', location: 'SMC Training Center', status: 'Sắp mở', statusColor: 'bg-amber-100 text-amber-700' },
+  { date: '30/08/2026', type: 'Sát hạch Hạng B - BVLOS', location: 'SMC Training Center', status: 'Sắp mở', statusColor: 'bg-amber-100 text-amber-700' },
   { date: '15/09/2026', type: 'Sát hạch Hạng B - BVLOS', location: 'SMC Training Center', status: 'Sắp mở', statusColor: 'bg-blue-100 text-blue-700' },
 ];
 
