@@ -1,5 +1,5 @@
 import SidebarLayout from './SidebarLayout';
-import { Shield, BookOpen, School, Users, GraduationCap, Award, FileText, BarChart3, Settings, UserCog, DollarSign, UserCircle, Building2, FileCheck } from 'lucide-react';
+import { Shield, BookOpen, School, Users, GraduationCap, Award, FileText, BarChart3, Settings, UserCog, DollarSign, UserCircle, Building2, FileCheck, FileImage } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function AdminLayout() {
@@ -19,6 +19,7 @@ export default function AdminLayout() {
         { to: '/admin/giang-vien', label: 'Giáo viên', icon: GraduationCap },
         { to: '/admin/sat-hach', label: 'Sát hạch', icon: Award },
         { to: '/admin/chung-chi', label: 'Chứng chỉ', icon: FileText },
+        { to: '/admin/tai-lieu', label: 'Tài liệu & Tư liệu', icon: FileImage },
         { to: '/admin/bao-cao', label: 'Báo cáo', icon: BarChart3 },
         { to: '/admin/hoc-phi', label: 'Học phí', icon: DollarSign },
         { to: '/admin/doi-lop-bao-luu', label: 'Đổi lớp & Bảo lưu', icon: Shield },

@@ -1591,7 +1591,58 @@ if (($parts[0] ?? '') === 'health' || empty($parts[0])) {
     ]);
 }
 
-// ──── UPLOAD ────
+// ──── UPLOAD / FILES / FILE (tài liệu & tư liệu) ────
+
+define('UPLOAD_MAX_BYTES', 20 * 1024 * 1024); // 20MB — vượt quá giới hạn PHP ini vẫn sẽ bị chặn trước đó
+
+// Đường dẫn web gốc (thư mục chứa index.html). api/ nằm ngay dưới thư mục này.
+define('WEB_ROOT_DIR', dirname(__DIR__));
+
+// Category lưu ra ngoài api/uploads (công khai, truy cập không cần đăng nhập)
+function isPublicCategory($category) {
+    return in_array($category, ['public-images', 'shared'], true);
+}
+
+// Ánh xạ bản ghi uploaded_files (snake_case) sang cả dạng camelCase để frontend
+// các trang giáo viên vẫn đọc được (trước đây đọc sai tên trường).
+function mapUploadedFile($row) {
+    if (!$row) return $row;
+    $row['name']       = $row['original_name'] ?? '';
+    $row['title']      = $row['title'] ?? ($row['original_name'] ?? '');
+    $row['description']= $row['description'] ?? '';
+    $row['size']       = (int)($row['size_bytes'] ?? 0);
+    $row['path']       = $row['stored_path'] ?? '';
+    $row['category']   = $row['category'] ?? '';
+    $row['uploadedAt'] = $row['uploaded_at'] ?? null;
+    $row['url']        = '/api/auth.php?action=file&id=' . ($row['id'] ?? '');
+    return $row;
+}
+
+function resolveStoredFile($storedPath) {
+    $abs = WEB_ROOT_DIR . '/' . ltrim($storedPath, '/');
+    if (is_file($abs)) return $abs;
+    // Đường dẫn cũ ghi tương đối so với api/ (ví dụ uploads/x/...) — tìm trong api/
+    $legacy = __DIR__ . '/' . ltrim($storedPath, '/');
+    if (is_file($legacy)) return $legacy;
+    return null;
+}
+
+function canViewFile($row, $auth) {
+    $category = $row['category'] ?? '';
+    if (isPublicCategory($category)) return true;
+    if (!$auth) return false;
+    $role = strtolower($auth['role'] ?? '');
+    // Nội bộ (admin/staff/accountant/teacher) xem được mọi thứ riêng tư
+    if (in_array($role, ['admin', 'staff', 'accountant', 'teacher'], true)) return true;
+    if ($role === 'student') {
+        $user = DB::selectOne("SELECT rank_group FROM users WHERE id = ?", [$auth['id'] ?? $auth['userId'] ?? '']);
+        $rank = strtoupper(trim((string)($user['rank_group'] ?? '')));
+        if (($category === 'material-a' && $rank === 'A') || ($category === 'material-b' && $rank === 'B')) return true;
+        return false;
+    }
+    return false;
+}
+
 if (($parts[0] ?? '') === 'upload') {
     $auth = requireRole(['ADMIN','STAFF','TEACHER','admin','staff','teacher']);
     if ($method !== 'POST') jsonResponse(['error' => 'POST required'], 405);
@@ -1603,19 +1654,26 @@ if (($parts[0] ?? '') === 'upload') {
     }
     $file = $_FILES['file'] ?? null;
     if (!$file || $file['error'] !== UPLOAD_ERR_OK) jsonResponse(['error' => 'File upload failed'], 400);
+    if ($file['size'] > UPLOAD_MAX_BYTES) jsonResponse(['error' => 'File vượt quá 20MB'], 400);
 
-    $uploadDir = __DIR__ . '/uploads/' . $category;
+    // Công khai → public-uploads/ ngoài đường chặn api/uploads/; riêng tư → api/uploads/
+    if (isPublicCategory($category)) {
+        $storedRel = 'public-uploads/' . $category;
+    } else {
+        $storedRel = 'api/uploads/' . $category;
+    }
+    $uploadDir = WEB_ROOT_DIR . '/' . $storedRel;
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
     $originalName = $file['name'];
     $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
     $storedName = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $storedPath = 'uploads/' . $category . '/' . $storedName;
+    $storedPath = $storedRel . '/' . $storedName;
 
     $allowedExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','jpg','jpeg','png','gif','mp4','zip','rar','csv','txt'];
     if (!in_array($ext, $allowedExts)) jsonResponse(['error' => 'Định dạng file không được hỗ trợ: .' . $ext], 400);
 
-    if (!move_uploaded_file($file['tmp_name'], __DIR__ . '/' . $storedPath)) {
+    if (!move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $storedName)) {
         jsonResponse(['error' => 'Lỗi lưu file'], 500);
     }
 
@@ -1630,27 +1688,103 @@ if (($parts[0] ?? '') === 'upload') {
     jsonResponse(['success' => true, 'path' => $storedPath, 'name' => $originalName], 201);
 }
 
-// ──── FILES ────
+// ──── FILES (danh sách / sửa / xoá) ────
 if (($parts[0] ?? '') === 'files') {
     $auth = authenticate();
-    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+
     if ($method === 'GET') {
         $category = $_GET['category'] ?? '';
+        if ($category && !preg_match('/^[a-zA-Z0-9_-]+$/', $category)) {
+            jsonResponse(['error' => 'Danh mục không hợp lệ'], 400);
+        }
+        // Danh sách ảnh công khai không cần đăng nhập (trang "Hình ảnh hoạt động")
+        if (!isPublicCategory($category) && !$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+        $role = $auth ? strtolower($auth['role'] ?? '') : '';
+
         if ($category) {
             $rows = DB::select("SELECT * FROM uploaded_files WHERE category=? ORDER BY uploaded_at DESC", [$category]);
+        } elseif ($role === 'student') {
+            $user = DB::selectOne("SELECT rank_group FROM users WHERE id = ?", [$auth['id'] ?? $auth['userId'] ?? '']);
+            $rank = strtoupper(trim((string)($user['rank_group'] ?? '')));
+            if ($rank === 'A' || $rank === 'B') {
+                $rows = DB::select("SELECT * FROM uploaded_files WHERE category=? ORDER BY uploaded_at DESC", ['material-' . strtolower($rank)]);
+            } else {
+                $rows = [];
+            }
         } else {
             $rows = DB::select("SELECT * FROM uploaded_files ORDER BY uploaded_at DESC");
         }
-        jsonResponse($rows);
+
+        jsonResponse(array_map('mapUploadedFile', $rows));
     }
+
     if ($method === 'DELETE' && ($parts[1] ?? null)) {
+        $auth = requireRole(['ADMIN','STAFF','TEACHER','admin','staff','teacher']);
         $id = (int)$parts[1];
         $file = DB::selectOne("SELECT * FROM uploaded_files WHERE id=?", [$id]);
         if (!$file) jsonResponse(['error' => 'Not found'], 404);
-        @unlink(__DIR__ . '/' . $file['stored_path']);
+        $abs = resolveStoredFile($file['stored_path']);
+        if ($abs) @unlink($abs);
         DB::execute("DELETE FROM uploaded_files WHERE id=?", [$id]);
         jsonResponse(['success' => true]);
     }
+
+    if ($method === 'PUT' && ($parts[1] ?? null)) {
+        $auth = requireRole(['ADMIN','STAFF','TEACHER','admin','staff','teacher']);
+        $id = (int)$parts[1];
+        $input = jsonInput();
+        $file = DB::selectOne("SELECT * FROM uploaded_files WHERE id=?", [$id]);
+        if (!$file) jsonResponse(['error' => 'Not found'], 404);
+        $title = $input['title'] ?? null;
+        $desc  = $input['description'] ?? null;
+        if ($title !== null || $desc !== null) {
+            DB::execute(
+                "UPDATE uploaded_files SET title = COALESCE(?, title), description = COALESCE(?, description) WHERE id = ?",
+                [$title, $desc, $id]
+            );
+        }
+        jsonResponse(['success' => true, 'file' => mapUploadedFile(DB::selectOne("SELECT * FROM uploaded_files WHERE id=?", [$id]))]);
+    }
+}
+
+// ──── FILE (tải xuống / xem, phát trực tiếp kèm phân quyền) ────
+if (($parts[0] ?? '') === 'file') {
+    $id = (int)($_GET['id'] ?? ($parts[1] ?? 0));
+    if (!$id) jsonResponse(['error' => 'Thiếu id'], 400);
+
+    $auth = authenticate();
+    $row = DB::selectOne("SELECT * FROM uploaded_files WHERE id=?", [$id]);
+    if (!$row) jsonResponse(['error' => 'Không tìm thấy file'], 404);
+    if (!canViewFile($row, $auth)) jsonResponse(['error' => 'Không có quyền xem file'], 403);
+
+    $abs = resolveStoredFile($row['stored_path']);
+    if (!$abs) jsonResponse(['error' => 'File không tồn tại trên máy chủ'], 404);
+
+    $mime = $row['mime_type'] ?? '';
+    if ((!$mime || $mime === 'application/octet-stream') && function_exists('mime_content_type')) {
+        $mime = mime_content_type($abs) ?: 'application/octet-stream';
+    }
+    if (!$mime) $mime = 'application/octet-stream';
+    $ext = strtolower(pathinfo($row['stored_path'], PATHINFO_EXTENSION));
+    $inline = in_array($ext, ['jpg','jpeg','png','gif','pdf','mp4','txt','csv'], true);
+
+    header('Content-Type: ' . $mime);
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Length: ' . filesize($abs));
+    header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . addslashes($row['original_name'] ?? 'file') . '"');
+    readfile($abs);
+    exit;
+}
+
+// ──── STUDENT-MATERIALS (tài liệu học tập theo hạng của học viên) ────
+if (($parts[0] ?? '') === 'student-materials') {
+    $auth = authenticate();
+    if (!$auth) jsonResponse(['error' => 'Unauthorized'], 401);
+    $user = DB::selectOne("SELECT rank_group FROM users WHERE id = ?", [$auth['id'] ?? $auth['userId'] ?? '']);
+    $rank = strtoupper(trim((string)($user['rank_group'] ?? '')));
+    if ($rank !== 'A' && $rank !== 'B') jsonResponse([]);
+    $rows = DB::select("SELECT * FROM uploaded_files WHERE category=? ORDER BY uploaded_at DESC", ['material-' . strtolower($rank)]);
+    jsonResponse(array_map('mapUploadedFile', $rows));
 }
 
 // ──── DEPRECATED ADMIN TUITION ENDPOINTS → forward to smc-db.php ────

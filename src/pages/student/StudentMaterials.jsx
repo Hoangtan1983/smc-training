@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileText, Download, Search, BookOpen, ExternalLink, GraduationCap } from 'lucide-react';
+import { apiGetStudentMaterials, apiFileUrl } from '../../data/api';
 
 // Cấu trúc tài liệu UAV theo học phần - được load từ thư mục /tai-lieu trên server
 const TAI_LIEU_HOC_PHAN = {
@@ -142,6 +143,21 @@ export default function StudentMaterials() {
   const [search, setSearch] = useState('');
   const [expandedHang, setExpandedHang] = useState(null);
   const [expandedHP, setExpandedHP] = useState(null);
+  const [myMaterials, setMyMaterials] = useState([]);
+  const [myMaterialsLoaded, setMyMaterialsLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGetStudentMaterials();
+        setMyMaterials(Array.isArray(data) ? data : []);
+      } catch {
+        setMyMaterials([]);
+      } finally {
+        setMyMaterialsLoaded(true);
+      }
+    })();
+  }, []);
 
   const handleDownload = (folder, file) => {
     const url = `${BASE_URL}/${folder}/${encodeURI(file)}`;
@@ -151,6 +167,13 @@ export default function StudentMaterials() {
   const handleView = (folder, file) => {
     const url = `${BASE_URL}/${folder}/${encodeURI(file)}`;
     window.open(url, '_blank');
+  };
+
+  const formatSize = (bytes) => {
+    const n = Number(bytes) || 0;
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+    return n + ' B';
   };
 
   // Đếm tổng số tài liệu
@@ -178,6 +201,31 @@ export default function StudentMaterials() {
           placeholder="Tìm kiếm tài liệu..."
         />
       </div>
+
+      {/* Tài liệu trung tâm đăng lên (theo hạng của học viên) */}
+      {myMaterials.length > 0 && (
+        <div className="mb-6">
+          <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <GraduationCap className="w-5 h-5 text-blue-500" /> Tài liệu trung tâm cập nhật
+          </h2>
+          <div className="space-y-2">
+            {myMaterials.filter(f => ((f.title || '') + ' ' + (f.name || '')).toLowerCase().includes(search.toLowerCase())).map(f => (
+              <div key={f.id} className="card p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-blue-500" /></div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{f.title || f.name}</div>
+                    <div className="text-xs text-gray-400">{formatSize(f.size)}{f.uploadedAt ? ' • ' + new Date(f.uploadedAt).toLocaleDateString('vi-VN') : ''}</div>
+                  </div>
+                </div>
+                <a href={apiFileUrl(f.id)} target="_blank" rel="noreferrer" className="btn-primary text-xs px-3 py-2 flex items-center gap-1 shrink-0">
+                  <Download className="w-3.5 h-3.5" /> Tải
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Học phần theo Hạng */}
       {Object.entries(TAI_LIEU_HOC_PHAN).map(([hangKey, hangData]) => (

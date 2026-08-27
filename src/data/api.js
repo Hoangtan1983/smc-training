@@ -56,7 +56,7 @@ const pathMap = {
   '/health': 'health',
 };
 
-async function request(method, path, body = null) {
+async function request(method, path, body = null, query = '') {
   // Strip leading/trailing slashes, split into segments
   const segments = path.replace(/^\/|\/$/g, '').split('/');
 
@@ -77,7 +77,7 @@ async function request(method, path, body = null) {
     action = action + '/' + segments[segments.length - 1];
   }
 
-  const url = API_BASE + '?action=' + encodeURIComponent(action);
+  const url = API_BASE + '?action=' + encodeURIComponent(action) + (query ? '&' + query : '');
   const headers = { 'Content-Type': 'application/json' };
   const token = getAuthToken();
   if (token) {
@@ -527,12 +527,23 @@ export async function apiUploadFile(file, category = 'documents') {
 }
 
 export async function apiGetFiles(category = null) {
-  const path = category ? `/files/${encodeURIComponent(category)}` : '/files';
-  return request('GET', path);
+  return request('GET', '/files', null, category ? `category=${encodeURIComponent(category)}` : '');
 }
 
 export async function apiDeleteFile(id) {
   return request('DELETE', `/files/${id}`);
+}
+
+export async function apiUpdateFile(id, { title, description } = {}) {
+  return request('PUT', `/files/${id}`, { title, description });
+}
+
+export function apiFileUrl(id) {
+  return `${API_BASE}?action=file&id=${encodeURIComponent(id)}`;
+}
+
+export async function apiGetStudentMaterials() {
+  return request('GET', '/student-materials');
 }
 
 // Sync: load all data at once

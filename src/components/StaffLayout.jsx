@@ -1,5 +1,5 @@
 import SidebarLayout from './SidebarLayout';
-import { Briefcase, Users, FileCheck, School, GraduationCap, FileText, BarChart3, BookOpen, UserCheck, ArrowLeftRight, UserCircle, Building2 } from 'lucide-react';
+import { Briefcase, Users, FileCheck, School, GraduationCap, FileText, BarChart3, BookOpen, UserCheck, ArrowLeftRight, UserCircle, Building2, FileImage } from 'lucide-react';
 
 export default function StaffLayout() {
   return (
@@ -18,6 +18,7 @@ export default function StaffLayout() {
         { to: '/staff/giang-vien', label: 'Giáo viên', icon: GraduationCap },
         { to: '/staff/doi-lop-bao-luu', label: 'Đổi lớp / Bảo lưu', icon: ArrowLeftRight },
         { to: '/staff/chung-chi', label: 'Chứng chỉ', icon: FileText },
+        { to: '/staff/tai-lieu', label: 'Tài liệu & Tư liệu', icon: FileImage },
         { to: '/staff/dai-ly', label: 'Đại lý', icon: Building2 },
         { to: '/staff/bao-cao', label: 'Báo cáo', icon: BarChart3 },
         { to: '/staff/tai-khoan', label: 'Tài khoản', icon: UserCircle },

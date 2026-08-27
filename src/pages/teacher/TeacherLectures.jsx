@@ -46,10 +46,8 @@ export default function TeacherLectures() {
   };
 
   const handleDownload = (file) => {
-    // Files are now on server, construct URL
-    if (file.path) {
-      window.open('/api/' + file.path, '_blank');
-    }
+    if (file.url) window.open(file.url, '_blank');
+    else if (file.path) window.open('/api/' + file.path, '_blank');
   };
 
   const filtered = files.filter(f => (f.name || f.originalName || '').toLowerCase().includes(search.toLowerCase()));

@@ -28,6 +28,7 @@ import AdminEnrollments from './pages/admin/AdminEnrollments';
 import AdminTuition from './pages/admin/AdminTuition';
 import AdminChangeRequests from './pages/admin/AdminChangeRequests';
 import AdminAgencies from './pages/admin/AdminAgencies';
+import AdminFiles from './pages/admin/AdminFiles';
 
 // Staff
 import StaffDashboard from './pages/staff/StaffDashboard';
@@ -135,6 +136,7 @@ function AppRoutes() {
         <Route path="giang-vien" element={<AdminTeachers />} />
         <Route path="sat-hach" element={<AdminExams />} />
         <Route path="chung-chi" element={<AdminCertificates />} />
+        <Route path="tai-lieu" element={<AdminFiles />} />
         <Route path="bao-cao" element={<AdminReports />} />
         <Route path="hoc-phi" element={<AdminTuition />} />
         <Route path="doi-lop-bao-luu" element={<AdminChangeRequests />} />
@@ -149,7 +151,7 @@ function AppRoutes() {
         <Route path="khoa-hoc" element={<StaffCourses />} />
         <Route path="duyet-tai-khoan" element={<StaffApprovals />} />
         <Route path="doi-lop-bao-luu" element={<StaffChangeRequests />} />
-        <Route path="tai-lieu" element={<StaffDocuments />} />
+        <Route path="tai-lieu" element={<AdminFiles />} />
         <Route path="lop-hoc" element={<StaffClasses />} />
         <Route path="hoc-vien" element={<StaffStudents />} />
         <Route path="giang-vien" element={<StaffTeachers />} />
