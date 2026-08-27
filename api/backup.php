@@ -3,10 +3,12 @@
  * SMC Training — Backup Script
  * Chạy qua cron hoặc gọi trực tiếp: /api/backup.php?token=BACKUP_SECRET
  *
- * Tạo file backup nén của toàn bộ api/data/ và api/uploads/
+ * Tạo file backup nén gồm: toàn bộ MySQL (mysql-dump.json), api/data/, api/uploads/
  * Lưu vào thư mục api/backups/ (được bảo vệ khỏi public access)
  * Giữ tối đa 30 backup gần nhất (auto-cleanup)
  */
+
+require_once __DIR__ . '/db.php';
 
 $envFile = __DIR__ . '/env.php';
 $env = (file_exists($envFile) && is_array($cfg = include $envFile)) ? $cfg : [];
@@ -23,6 +25,27 @@ if (!$isCLI && !$hasToken) {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['error' => 'Forbidden. Use token or CLI.']);
     exit;
+}
+
+// ── Dump toàn bộ MySQL ra cấu trúc JSON (dữ liệu thật của hệ thống) ──
+// Toàn bộ nghiệp vụ (học viên, hóa đơn, thanh toán...) nằm trong MySQL từ 12/08/2026.
+// Nếu không có bước này, backup chỉ chứa vài file JSON cũ gần như rỗng.
+function dumpMysqlToJson() {
+    try {
+        $tables = DB::select(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name"
+        );
+        $dump = ['dumped_at' => date('c'), 'tables' => []];
+        foreach ($tables as $t) {
+            $name = $t['table_name'];
+            $rows = DB::select("SELECT * FROM `{$name}`");
+            $dump['tables'][$name] = ['count' => count($rows), 'rows' => $rows];
+        }
+        return [$dump, count($tables)];
+    } catch (Exception $e) {
+        error_log('[backup] MySQL dump failed: ' . $e->getMessage());
+        return [null, 0];
+    }
 }
 
 // ── Bắt đầu backup ──
@@ -82,12 +105,20 @@ if (is_dir($uploadsDir)) {
     }
 }
 
+// Thêm MySQL dump (dữ liệu thật của hệ thống)
+$mysqlTables = 0;
+list($mysqlDump, $mysqlTables) = dumpMysqlToJson();
+if ($mysqlDump !== null) {
+    $zip->addFromString('mysql-dump.json', json_encode($mysqlDump, JSON_UNESCAPED_UNICODE));
+}
+
 // Thêm metadata
 $meta = [
     'created_at' => date('c'),
     'server' => gethostname() ?: 'plesk',
     'data_files' => $dataFiles,
     'upload_files' => $uploadFiles,
+    'mysql_tables' => $mysqlTables,
     'total_size' => 0,
 ];
 $zip->addFromString('backup-metadata.json', json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -117,11 +148,12 @@ if (count($allBackups) > MAX_BACKUPS) {
 
 // ── Output ──
 $message = sprintf(
-    "Backup created: %s (%s bytes, %d data files, %d upload files)",
+    "Backup created: %s (%s bytes, %d data files, %d upload files, %d MySQL tables)",
     basename($backupFile),
     number_format($fileSize),
     $dataFiles,
-    $uploadFiles
+    $uploadFiles,
+    $mysqlTables
 );
 
 if ($isCLI) {
@@ -135,6 +167,7 @@ if ($isCLI) {
         'size' => $fileSize,
         'data_files' => $dataFiles,
         'upload_files' => $uploadFiles,
+        'mysql_tables' => $mysqlTables,
         'total_backups' => count($allBackups),
     ], JSON_UNESCAPED_UNICODE);
 }
