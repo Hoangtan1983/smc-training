@@ -93,6 +93,7 @@ import AccountantAgencies from './pages/accountant/AccountantAgencies';
 // Public pages
 import AboutPage from './pages/AboutPage';
 import GalleryPage from './pages/GalleryPage';
+import VideoPage from './pages/VideoPage';
 import ExamSchedulePage from './pages/ExamSchedulePage';
 import CertLookupPage from './pages/CertLookupPage';
 import NewsPage from './pages/public/NewsPage';
@@ -121,6 +122,7 @@ function AppRoutes() {
         <Route index element={<HomePage />} />
         <Route path="gioi-thieu" element={<AboutPage />} />
         <Route path="hinh-anh" element={<GalleryPage />} />
+        <Route path="video" element={<VideoPage />} />
         <Route path="lich-thi" element={<ExamSchedulePage />} />
         <Route path="tin-tuc" element={<NewsPage />} />
         <Route path="tin-tuc/:slug" element={<NewsDetailPage />} />
