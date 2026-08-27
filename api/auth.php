@@ -1600,7 +1600,7 @@ define('WEB_ROOT_DIR', dirname(__DIR__));
 
 // Category lưu ra ngoài api/uploads (công khai, truy cập không cần đăng nhập)
 function isPublicCategory($category) {
-    return in_array($category, ['public-images', 'shared'], true);
+    return in_array($category, ['public-images', 'shared', 'videos'], true);
 }
 
 // Ánh xạ bản ghi uploaded_files (snake_case) sang cả dạng camelCase để frontend
