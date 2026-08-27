@@ -546,6 +546,50 @@ export async function apiGetStudentMaterials() {
   return request('GET', '/student-materials');
 }
 
+// ──── Bài viết / tin tức / sự kiện / trang tĩnh (api/posts.php) ────
+const POSTS_BASE = '/api/posts.php';
+
+async function postsRequest(action, method = 'GET', body = null, query = '') {
+  const url = POSTS_BASE + '?action=' + encodeURIComponent(action) + (query ? '&' + query : '');
+  const headers = {};
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const opts = { method, headers, credentials: 'include' };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('Lỗi máy chủ: ' + text.substring(0, 200)); }
+  if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+  return data;
+}
+
+export function apiGetPosts({ type = '', pageKey = '', includeDraft = false } = {}) {
+  const q = [];
+  if (type) q.push(`type=${encodeURIComponent(type)}`);
+  if (pageKey) q.push(`page_key=${encodeURIComponent(pageKey)}`);
+  return postsRequest('list', 'GET', null, q.join('&'));
+}
+
+export function apiGetPostBySlug(slug) {
+  return postsRequest(`detail/${encodeURIComponent(slug)}`);
+}
+
+export function apiCreatePost(payload) {
+  return postsRequest('create', 'POST', payload);
+}
+
+export function apiUpdatePost(id, payload) {
+  return postsRequest(`update/${id}`, 'PUT', payload);
+}
+
+export function apiDeletePost(id) {
+  return postsRequest(`delete/${id}`, 'DELETE');
+}
+
 // Sync: load all data at once
 export async function apiSyncAll() {
   const [courses, classes, enrollments, attendance, exams, fly_logs, certifications, tuitions] = await Promise.all([

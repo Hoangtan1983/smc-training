@@ -51,6 +51,7 @@ export default function Layout() {
                 { to: '/', label: 'Trang chủ' },
                 { to: '/gioi-thieu', label: 'Giới thiệu' },
                 { to: '/hinh-anh', label: 'Hình ảnh' },
+                { to: '/tin-tuc', label: 'Tin tức' },
                 { to: '/lich-thi', label: 'Lịch thi' },
                 { to: '/tra-cuu', label: 'Tra cứu' },
               ].map(link => (
@@ -125,6 +126,7 @@ export default function Layout() {
                 { to: '/', label: 'Trang chủ' },
                 { to: '/gioi-thieu', label: 'Giới thiệu' },
                 { to: '/hinh-anh', label: 'Hình ảnh' },
+                { to: '/tin-tuc', label: 'Tin tức' },
                 { to: '/lich-thi', label: 'Lịch thi' },
                 { to: '/tra-cuu', label: 'Tra cứu' },
               ].map(link => (

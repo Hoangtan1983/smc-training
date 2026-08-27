@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiGetPosts } from '../data/api';
 import {
   Shield,
   Users,
@@ -75,6 +77,18 @@ const process = [
 
 export default function HomePage() {
   const { user } = useAuth();
+  const [news, setNews] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGetPosts({ type: 'article' });
+        setNews((Array.isArray(data) ? data : []).slice(0, 3));
+      } catch {
+        setNews([]);
+      }
+    })();
+  }, []);
 
   return (
     <div>
@@ -260,6 +274,32 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Tin tức — lấy từ hệ thống quản trị bài viết */}
+      {news.length > 0 && (
+        <section className="py-20 sm:py-32">
+          <div className="page-container">
+            <div className="text-center max-w-2xl mx-auto mb-12">
+              <h2 className="section-title">Tin tức & Sự kiện</h2>
+              <p className="section-subtitle mx-auto">Cập nhật mới nhất từ SMC Training</p>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {news.map(p => (
+                <Link key={p.id} to={`/tin-tuc/${p.slug || p.id}`} className="card p-5 hover:shadow-ios transition-shadow">
+                  {p.coverImage && <img src={p.coverImage} alt="" className="w-full h-36 object-cover rounded-xl mb-4" />}
+                  <h3 className="font-semibold text-[#1C1C1E] mb-2 line-clamp-2">{p.title}</h3>
+                  {p.excerpt && <p className="text-[0.875rem] text-[#8E8E93] line-clamp-2">{p.excerpt}</p>}
+                </Link>
+              ))}
+            </div>
+            <div className="text-center mt-8">
+              <Link to="/tin-tuc" className="inline-flex items-center gap-1 text-[#007AFF] font-medium hover:underline">
+                Xem tất cả <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* CTA Section — iOS style */}
       <section className="py-20 sm:py-32 relative overflow-hidden">

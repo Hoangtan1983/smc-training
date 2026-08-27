@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import { Calendar, MapPin, Clock } from 'lucide-react';
+import { apiGetPosts } from '../data/api';
 
 const exams = [
   { date: '15/08/2026', type: 'Sát hạch Hạng A', location: 'SMC Training Center', status: 'Đang đăng ký', statusColor: 'bg-green-100 text-green-700' },
@@ -7,6 +9,32 @@ const exams = [
 ];
 
 export default function ExamSchedulePage() {
+  const [pageContent, setPageContent] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGetPosts({ type: 'page', pageKey: 'lich-thi' });
+        const arr = Array.isArray(data) ? data : [];
+        setPageContent(arr[0]?.content ? arr[0].content : null);
+      } catch {
+        setPageContent(null);
+      }
+    })();
+  }, []);
+
+  if (pageContent) {
+    return (
+      <div className="pt-20 pb-12">
+        <div className="page-container">
+          <div className="max-w-3xl mx-auto">
+            <div className="prose max-w-none text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: pageContent }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pt-20 pb-12">
       <div className="page-container">

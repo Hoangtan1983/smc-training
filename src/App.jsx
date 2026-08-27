@@ -95,6 +95,9 @@ import AboutPage from './pages/AboutPage';
 import GalleryPage from './pages/GalleryPage';
 import ExamSchedulePage from './pages/ExamSchedulePage';
 import CertLookupPage from './pages/CertLookupPage';
+import NewsPage from './pages/public/NewsPage';
+import NewsDetailPage from './pages/public/NewsDetailPage';
+import AdminPosts from './pages/admin/AdminPosts';
 import ProfilePage from './pages/ProfilePage';
 
 function ProtectedByRole({ children, role }) {
@@ -119,6 +122,8 @@ function AppRoutes() {
         <Route path="gioi-thieu" element={<AboutPage />} />
         <Route path="hinh-anh" element={<GalleryPage />} />
         <Route path="lich-thi" element={<ExamSchedulePage />} />
+        <Route path="tin-tuc" element={<NewsPage />} />
+        <Route path="tin-tuc/:slug" element={<NewsDetailPage />} />
         <Route path="tra-cuu" element={<CertLookupPage />} />
       </Route>
       <Route path="/login" element={user ? <Navigate to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'ACCOUNTANT' ? '/accountant' : user.role === 'TEACHER' ? '/teacher' : user.role === 'AGENCY' ? '/agency' : '/student'} replace /> : <LoginPage />} />
@@ -137,6 +142,7 @@ function AppRoutes() {
         <Route path="sat-hach" element={<AdminExams />} />
         <Route path="chung-chi" element={<AdminCertificates />} />
         <Route path="tai-lieu" element={<AdminFiles />} />
+        <Route path="bai-viet" element={<AdminPosts />} />
         <Route path="bao-cao" element={<AdminReports />} />
         <Route path="hoc-phi" element={<AdminTuition />} />
         <Route path="doi-lop-bao-luu" element={<AdminChangeRequests />} />

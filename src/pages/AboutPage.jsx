@@ -1,6 +1,34 @@
+import { useState, useEffect } from 'react';
 import { Shield, MapPin, Phone, Building, ScrollText } from 'lucide-react';
+import { apiGetPosts } from '../data/api';
 
 export default function AboutPage() {
+  const [pageContent, setPageContent] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiGetPosts({ type: 'page', pageKey: 'gioi-thieu' });
+        const arr = Array.isArray(data) ? data : [];
+        setPageContent(arr[0]?.content ? arr[0].content : null);
+      } catch {
+        setPageContent(null);
+      }
+    })();
+  }, []);
+
+  if (pageContent) {
+    return (
+      <div className="pt-20 pb-12">
+        <div className="page-container">
+          <div className="max-w-4xl mx-auto">
+            <div className="prose max-w-none text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: pageContent }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pt-20 pb-12">
       <div className="page-container">
