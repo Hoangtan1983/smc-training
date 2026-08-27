@@ -173,8 +173,8 @@ export default function AdminFiles() {
                 <input value={editing.title} onChange={e => setEditing({ ...editing, title: e.target.value })} className="input-field" placeholder="Tiêu đề hiển thị" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
-                <textarea value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} className="input-field" rows={3} placeholder="Mô tả ngắn (tuỳ chọn)" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chú thích / Mô tả (hiện dưới ảnh)</label>
+                <textarea value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} className="input-field" rows={3} placeholder="Ví dụ: Buổi thực hành bay ngoài tầm nhìn tại sân bay SMC" />
               </div>
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
