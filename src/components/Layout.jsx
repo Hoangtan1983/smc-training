@@ -56,18 +56,18 @@ export default function Layout() {
         {/* Main navbar */}
         <div className={`bg-white/95 backdrop-blur border-b transition-shadow duration-200 ${scrolled ? 'shadow-md border-transparent' : 'border-gray-100'}`}>
           <div className="page-container">
-            <div className="flex items-center justify-between h-16">
+            <div className="flex items-center justify-between gap-x-6 h-16">
               {/* Logo + brand */}
               <Link to="/" className="flex items-center gap-2.5 shrink-0">
                 <img src="/logo.png" alt="SMC Training" className="h-9 w-auto" />
                 <div className="leading-tight">
-                  <div className="font-bold text-[#0B1F3A] text-sm tracking-tight">SMC TRAINING</div>
-                  <div className="text-[0.65rem] text-gray-500">Ứng dụng Công nghệ</div>
+                  <div className="font-bold text-[#0B1F3A] text-sm tracking-tight whitespace-nowrap">SMC TRAINING</div>
+                  <div className="text-[0.65rem] text-gray-500 whitespace-nowrap">Ứng dụng Công nghệ</div>
                 </div>
               </Link>
 
               {/* Desktop nav */}
-              <nav className="hidden lg:flex items-center gap-5">
+              <nav className="hidden xl:flex items-center gap-6">
                 {NAV.map(link => (
                   <Link
                     key={link.to}
@@ -83,7 +83,7 @@ export default function Layout() {
               </nav>
 
               {/* Right side */}
-              <div className="hidden lg:flex items-center gap-3 shrink-0">
+              <div className="hidden xl:flex items-center gap-3 shrink-0">
                 {user ? (
                   <div className="flex items-center gap-2">
                     <Link to="/profile" className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-gray-50 transition-colors">
@@ -121,7 +121,7 @@ export default function Layout() {
               {/* Mobile menu button */}
               <button
                 onClick={() => setMobileOpen(!mobileOpen)}
-                className="lg:hidden p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="xl:hidden p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                 aria-label="Menu"
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -132,7 +132,7 @@ export default function Layout() {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="lg:hidden bg-white border-t border-gray-100 shadow-lg animate-slide-down">
+          <div className="xl:hidden bg-white border-t border-gray-100 shadow-lg animate-slide-down">
             <div className="page-container py-3 space-y-1">
               {NAV.map(link => (
                 <Link
