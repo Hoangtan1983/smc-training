@@ -13,6 +13,9 @@ const TABS = [
 const PAGE_OPTIONS = [
   { key: 'gioi-thieu', label: 'Giới thiệu (/gioi-thieu)' },
   { key: 'lich-thi', label: 'Lịch thi (/lich-thi)' },
+  { key: 'lai-xe-gioi-thieu', label: 'Lái xe — Giới thiệu (/lai-xe)' },
+  { key: 'lai-xe-hang-a1', label: 'Lái xe — Hạng A1 (/lai-xe/hang-a1)' },
+  { key: 'lai-xe-hang-a', label: 'Lái xe — Hạng A (/lai-xe/hang-a)' },
 ];
 
 const EMPTY_FORM = { id: null, title: '', excerpt: '', content: '', coverImage: '', status: 'draft', eventDate: '', pageKey: 'gioi-thieu' };

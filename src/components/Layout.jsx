@@ -55,6 +55,7 @@ export default function Layout() {
                 { to: '/tin-tuc', label: 'Tin tức & Sự kiện' },
                 { to: '/lich-thi', label: 'Lịch thi' },
                 { to: '/tra-cuu', label: 'Tra cứu' },
+                { to: '/lai-xe', label: 'Đào tạo lái xe' },
               ].map(link => (
                 <Link key={link.to} to={link.to}
                   className={`text-[0.8125rem] font-medium px-3 py-1.5 rounded-full transition-colors duration-200 ${
@@ -131,6 +132,7 @@ export default function Layout() {
                 { to: '/tin-tuc', label: 'Tin tức & Sự kiện' },
                 { to: '/lich-thi', label: 'Lịch thi' },
                 { to: '/tra-cuu', label: 'Tra cứu' },
+                { to: '/lai-xe', label: 'Đào tạo lái xe' },
               ].map(link => (
                 <Link key={link.to} to={link.to} onClick={() => setMobileOpen(false)}
                   className={`block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium transition-colors ${

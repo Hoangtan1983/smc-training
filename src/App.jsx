@@ -94,6 +94,12 @@ import AccountantAgencies from './pages/accountant/AccountantAgencies';
 import AboutPage from './pages/AboutPage';
 import GalleryPage from './pages/GalleryPage';
 import VideoPage from './pages/VideoPage';
+import LaiXeLayout from './pages/laxe/LaiXeLayout';
+import LaiXeHome from './pages/laxe/LaiXeHome';
+import LaiXeHangA1 from './pages/laxe/LaiXeHangA1';
+import LaiXeHangA from './pages/laxe/LaiXeHangA';
+import LaiXeDangKy from './pages/laxe/LaiXeDangKy';
+import AdminLaiXeRegistrations from './pages/admin/AdminLaiXeRegistrations';
 import ExamSchedulePage from './pages/ExamSchedulePage';
 import CertLookupPage from './pages/CertLookupPage';
 import NewsPage from './pages/public/NewsPage';
@@ -128,6 +134,15 @@ function AppRoutes() {
         <Route path="tin-tuc/:slug" element={<NewsDetailPage />} />
         <Route path="tra-cuu" element={<CertLookupPage />} />
       </Route>
+
+      {/* Khu vực đào tạo lái xe — tách biệt với UAV */}
+      <Route path="/lai-xe" element={<LaiXeLayout />}>
+        <Route index element={<LaiXeHome />} />
+        <Route path="hang-a1" element={<LaiXeHangA1 />} />
+        <Route path="hang-a" element={<LaiXeHangA />} />
+        <Route path="dang-ky" element={<LaiXeDangKy />} />
+      </Route>
+
       <Route path="/login" element={user ? <Navigate to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'ACCOUNTANT' ? '/accountant' : user.role === 'TEACHER' ? '/teacher' : user.role === 'AGENCY' ? '/agency' : '/student'} replace /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to="/student" replace /> : <RegisterPage />} />
       <Route path="/profile" element={<ProtectedByRole><ProfilePage /></ProtectedByRole>} />
@@ -145,6 +160,7 @@ function AppRoutes() {
         <Route path="chung-chi" element={<AdminCertificates />} />
         <Route path="tai-lieu" element={<AdminFiles />} />
         <Route path="bai-viet" element={<AdminPosts />} />
+        <Route path="lai-xe" element={<AdminLaiXeRegistrations />} />
         <Route path="bao-cao" element={<AdminReports />} />
         <Route path="hoc-phi" element={<AdminTuition />} />
         <Route path="doi-lop-bao-luu" element={<AdminChangeRequests />} />

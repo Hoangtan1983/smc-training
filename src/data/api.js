@@ -590,6 +590,46 @@ export function apiDeletePost(id) {
   return postsRequest(`delete/${id}`, 'DELETE');
 }
 
+// ──── Đăng ký đào tạo lái xe (api/laxe.php) ────
+const LAXE_BASE = '/api/laxe.php';
+
+async function laxeRequest(action, method = 'GET', body = null, query = '') {
+  const url = LAXE_BASE + '?action=' + encodeURIComponent(action) + (query ? '&' + query : '');
+  const headers = {};
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const opts = { method, headers, credentials: 'include' };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, opts);
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('Lỗi máy chủ: ' + text.substring(0, 200)); }
+  if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+  return data;
+}
+
+export function apiLaxeRegister(payload) {
+  return laxeRequest('register', 'POST', payload);
+}
+
+export function apiLaxeList({ status = '', license = '' } = {}) {
+  const q = [];
+  if (status) q.push(`status=${encodeURIComponent(status)}`);
+  if (license) q.push(`license=${encodeURIComponent(license)}`);
+  return laxeRequest('list', 'GET', null, q.join('&'));
+}
+
+export function apiLaxeUpdate(id, payload) {
+  return laxeRequest(`update/${id}`, 'PUT', payload);
+}
+
+export function apiLaxeDelete(id) {
+  return laxeRequest(`delete/${id}`, 'DELETE');
+}
+
 // Sync: load all data at once
 export async function apiSyncAll() {
   const [courses, classes, enrollments, attendance, exams, fly_logs, certifications, tuitions] = await Promise.all([
