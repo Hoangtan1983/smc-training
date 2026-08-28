@@ -5,7 +5,7 @@ const FALLBACK = `
 <p>Hạng A cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh trên 125 cm³ hoặc có công suất động cơ điện trên 11 kW, bao gồm các dòng xe phân khối lớn.</p>
 <h3>Nội dung đào tạo</h3>
 <ul>
-<li>Lý thuyết Luật Giao thông đường bộ.</li>
+<li>Lý thuyết Luật Trật tự Giao thông đường bộ.</li>
 <li>Kỹ năng thực hành sa hình nâng cao trên xe phân khối lớn.</li>
 <li>Hướng dẫn thủ tục hồ sơ và lịch thi sát hạch.</li>
 </ul>

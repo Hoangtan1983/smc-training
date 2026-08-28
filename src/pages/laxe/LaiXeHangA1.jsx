@@ -5,7 +5,7 @@ const FALLBACK = `
 <p>Hạng A1 cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh đến 125 cm³ hoặc có công suất động cơ điện đến 11 kW. Đây là hạng bằng phổ biến nhất cho người điều khiển xe máy (bao gồm xe máy điện) thông thường.</p>
 <h3>Nội dung đào tạo</h3>
 <ul>
-<li>Lý thuyết Luật Giao thông đường bộ.</li>
+<li>Lý thuyết Luật Trật tự Giao thông đường bộ.</li>
 <li>Kỹ năng thực hành sa hình và điều khiển xe an toàn.</li>
 <li>Hướng dẫn thủ tục hồ sơ và lịch thi sát hạch.</li>
 </ul>

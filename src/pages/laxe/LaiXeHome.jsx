@@ -2,7 +2,7 @@ import LaiXePageContent from './LaiXePageContent';
 
 const FALLBACK = `
 <h2>Đào tạo sát hạch lái xe máy hạng A1 & A</h2>
-<p>SMC Training đào tạo sát hạch lái xe hạng A1 và A theo <strong>Điều 57, Luật Trật tự, an toàn giao thông đường bộ (36/2024/QH15)</strong>, với lộ trình học rõ ràng, giảng viên giàu kinh nghiệm và hỗ trợ thủ tục thi sát hạch.</p>
+<p>SMC Training đào tạo sát hạch lái xe hạng A1 và A theo <strong>Luật Trật tự, an toàn giao thông đường bộ (36/2024/QH15)</strong>, với lộ trình học rõ ràng, giảng viên giàu kinh nghiệm và hỗ trợ thủ tục thi sát hạch.</p>
 <h3>Hạng A1</h3>
 <p>Dành cho người điều khiển xe mô tô hai bánh có dung tích xi-lanh đến 125 cm³ hoặc có công suất động cơ điện đến 11 kW — bao gồm cả xe máy điện. Phù hợp với đa số người học có nhu cầu lái xe máy phổ thông hàng ngày.</p>
 <h3>Hạng A</h3>
