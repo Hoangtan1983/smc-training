@@ -27,7 +27,7 @@ export default function VideoPage() {
   }, []);
 
   return (
-    <div className="pt-20 pb-12">
+    <div className="pt-10 pb-12">
       <div className="page-container">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">

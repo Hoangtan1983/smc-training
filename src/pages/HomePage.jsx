@@ -113,7 +113,7 @@ export default function HomePage() {
   return (
     <div>
       {/* Hero Section — iOS style */}
-      <section className="relative min-h-screen flex items-center overflow-hidden">
+      <section className="relative min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-6rem)] flex items-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#F0F7FF] via-white to-[#F0FDFB]" />
         <div className="absolute top-20 right-10 w-72 h-72 bg-[#007AFF]/8 rounded-full blur-3xl" />
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#5AC8FA]/8 rounded-full blur-3xl" />

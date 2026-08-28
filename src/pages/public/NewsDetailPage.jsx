@@ -27,7 +27,7 @@ export default function NewsDetailPage() {
   };
 
   return (
-    <div className="pt-20 pb-12">
+    <div className="pt-10 pb-12">
       <div className="page-container">
         <div className="max-w-3xl mx-auto">
           <Link to="/tin-tuc" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 mb-6">

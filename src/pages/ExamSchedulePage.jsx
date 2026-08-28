@@ -21,7 +21,7 @@ export default function ExamSchedulePage() {
   // Khi đã đăng, nội dung sẽ hiển thị ở đây thay cho trạng thái chờ.
   if (pageContent) {
     return (
-      <div className="pt-20 pb-12">
+      <div className="pt-10 pb-12">
         <div className="page-container">
           <div className="max-w-3xl mx-auto">
             <div className="prose max-w-none text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: pageContent }} />
@@ -32,7 +32,7 @@ export default function ExamSchedulePage() {
   }
 
   return (
-    <div className="pt-20 pb-12">
+    <div className="pt-10 pb-12">
       <div className="page-container">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-12">

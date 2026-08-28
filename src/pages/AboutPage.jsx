@@ -19,7 +19,7 @@ export default function AboutPage() {
 
   if (pageContent) {
     return (
-      <div className="pt-20 pb-12">
+      <div className="pt-10 pb-12">
         <div className="page-container">
           <div className="max-w-4xl mx-auto">
             <div className="prose max-w-none text-gray-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: pageContent }} />
@@ -30,7 +30,7 @@ export default function AboutPage() {
   }
 
   return (
-    <div className="pt-20 pb-12">
+    <div className="pt-10 pb-12">
       <div className="page-container">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">

@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, ChevronDown, LogOut, User, LayoutDashboard } from 'lucide-react';
+import { Menu, X, LogOut, Phone, Mail } from 'lucide-react';
+
+const NAV = [
+  { to: '/', label: 'Trang chủ' },
+  { to: '/gioi-thieu', label: 'Giới thiệu' },
+  { to: '/hinh-anh', label: 'Hình ảnh' },
+  { to: '/video', label: 'Video' },
+  { to: '/tin-tuc', label: 'Tin tức & Sự kiện' },
+  { to: '/lich-thi', label: 'Lịch thi' },
+  { to: '/tra-cuu', label: 'Tra cứu' },
+  { to: '/lai-xe', label: 'Đào tạo lái xe' },
+];
 
 export default function Layout() {
   const { user, logout, ROLE_LABELS } = useAuth();
@@ -11,7 +22,7 @@ export default function Layout() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const handler = () => setScrolled(window.scrollY > 20);
+    const handler = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handler);
     return () => window.removeEventListener('scroll', handler);
   }, []);
@@ -21,125 +32,117 @@ export default function Layout() {
     navigate('/');
   };
 
-  const isHome = location.pathname === '/';
+  const isActive = (to) => (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to));
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Navbar — iOS style */}
-      <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled || !isHome
-            ? 'bg-white/85 backdrop-blur-xl backdrop-saturate-150 border-b border-black/5'
-            : 'bg-transparent'
-        }`}
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      >
-        <div className="page-container">
-          <div className="flex items-center justify-between h-12 sm:h-14">
-            {/* Logo */}
-            <Link
-              to="/"
-              className="flex items-center gap-2 group"
-            >
-              <img src="/logo.png" alt="SMC Training" className="h-8 sm:h-9 w-auto" />
-              <span className="text-xs sm:text-sm font-semibold text-[#007AFF] tracking-tight">SMC TRAINING</span>
-            </Link>
-
-            {/* Desktop Nav — iOS style */}
-            <div className="hidden lg:flex items-center gap-1">
-              {[
-                { to: '/', label: 'Trang chủ' },
-                { to: '/gioi-thieu', label: 'Giới thiệu' },
-                { to: '/hinh-anh', label: 'Hình ảnh' },
-                { to: '/video', label: 'Video' },
-                { to: '/tin-tuc', label: 'Tin tức & Sự kiện' },
-                { to: '/lich-thi', label: 'Lịch thi' },
-                { to: '/tra-cuu', label: 'Tra cứu' },
-                { to: '/lai-xe', label: 'Đào tạo lái xe' },
-              ].map(link => (
-                <Link key={link.to} to={link.to}
-                  className={`text-[0.8125rem] font-medium px-3 py-1.5 rounded-full transition-colors duration-200 ${
-                    location.pathname === link.to
-                      ? 'text-[#007AFF] bg-[#007AFF]/8'
-                      : 'text-[#1C1C1E] hover:text-[#007AFF] hover:bg-[#007AFF]/5'
-                  }`}>
-                  {link.label}
-                </Link>
-              ))}
-              {user && (
-                <Link
-                  to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'}
-                  className="text-[0.8125rem] font-medium px-3 py-1.5 rounded-full text-[#007AFF] bg-[#007AFF]/8 hover:bg-[#007AFF]/12 transition-colors"
-                >
-                  Vào hệ thống
-                </Link>
-              )}
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-50">
+        {/* Top utility bar */}
+        <div className="hidden md:block bg-[#0B1F3A]">
+          <div className="page-container flex items-center justify-between h-8 text-[0.75rem] text-white/85">
+            <div className="flex items-center gap-6">
+              <span className="flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5" /> 1900 638939
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" /> support@smartconnect.com.vn
+              </span>
             </div>
-
-            {/* Desktop Right — iOS style */}
-            <div className="hidden lg:flex items-center gap-2">
-              {user ? (
-                <div className="flex items-center gap-2">
-                  <Link to="/profile" className="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-black/5 transition-colors">
-                    <div className="w-7 h-7 rounded-full bg-[#007AFF] flex items-center justify-center text-white text-xs font-semibold">
-                      {user.fullName.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="text-left">
-                      <p className="text-[0.8125rem] font-medium text-[#1C1C1E] leading-tight">{user.fullName}</p>
-                      <p className="text-[0.6875rem] text-[#8E8E93]">{ROLE_LABELS?.[user?.role]?.label || user?.role}</p>
-                    </div>
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="p-2 text-[#8E8E93] hover:text-[#FF3B30] hover:bg-red-50 rounded-full transition-colors"
-                    title="Đăng xuất"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <Link to="/login" className="btn-ghost text-[0.8125rem] py-1.5">
-                    Đăng nhập
-                  </Link>
-                  <Link to="/register" className="btn-primary text-[0.8125rem] py-1.5 px-4">
-                    Đăng ký
-                  </Link>
-                </>
-              )}
-            </div>
-
-            {/* Mobile Menu Button — iOS style */}
-            <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="lg:hidden p-2 text-[#1C1C1E] hover:bg-black/5 rounded-full transition-colors"
-              aria-label="Menu"
-            >
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+            <span className="text-white/60 tracking-wide">Đào tạo UAV • Lái xe A1 & A</span>
           </div>
         </div>
 
-        {/* Mobile Menu — iOS Sheet style */}
+        {/* Main navbar */}
+        <div className={`bg-white/95 backdrop-blur border-b transition-shadow duration-200 ${scrolled ? 'shadow-md border-transparent' : 'border-gray-100'}`}>
+          <div className="page-container">
+            <div className="flex items-center justify-between h-16">
+              {/* Logo + brand */}
+              <Link to="/" className="flex items-center gap-2.5 shrink-0">
+                <img src="/logo.png" alt="SMC Training" className="h-9 w-auto" />
+                <div className="leading-tight">
+                  <div className="font-bold text-[#0B1F3A] text-sm tracking-tight">SMC TRAINING</div>
+                  <div className="text-[0.65rem] text-gray-500">Ứng dụng Công nghệ</div>
+                </div>
+              </Link>
+
+              {/* Desktop nav */}
+              <nav className="hidden lg:flex items-center gap-5">
+                {NAV.map(link => (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={`relative text-[0.8125rem] font-medium whitespace-nowrap py-1 transition-colors group ${
+                      isActive(link.to) ? 'text-[#007AFF]' : 'text-gray-600 hover:text-[#007AFF]'
+                    }`}
+                  >
+                    {link.label}
+                    <span className={`absolute left-0 -bottom-0.5 h-[2px] rounded-full bg-[#007AFF] transition-all duration-200 ${isActive(link.to) ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                  </Link>
+                ))}
+              </nav>
+
+              {/* Right side */}
+              <div className="hidden lg:flex items-center gap-3 shrink-0">
+                {user ? (
+                  <div className="flex items-center gap-2">
+                    <Link to="/profile" className="flex items-center gap-2 px-2 py-1 rounded-full hover:bg-gray-50 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-[#007AFF] flex items-center justify-center text-white text-xs font-semibold">
+                        {user.fullName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="text-left leading-tight">
+                        <p className="text-[0.8125rem] font-medium text-gray-800">{user.fullName}</p>
+                        <p className="text-[0.6875rem] text-gray-400">{ROLE_LABELS?.[user?.role]?.label || user?.role}</p>
+                      </div>
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                      title="Đăng xuất"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Link to="/login" className="text-[0.8125rem] font-medium text-gray-600 hover:text-[#007AFF] px-3 py-2 transition-colors">
+                      Đăng nhập
+                    </Link>
+                    <Link
+                      to="/register"
+                      className="inline-flex items-center bg-gradient-to-r from-[#007AFF] to-[#0062CC] text-white text-[0.8125rem] font-semibold px-5 py-2.5 rounded-full shadow-md shadow-[#007AFF]/25 hover:shadow-lg hover:shadow-[#007AFF]/30 transition-all"
+                    >
+                      Đăng ký ngay
+                    </Link>
+                  </>
+                )}
+              </div>
+
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setMobileOpen(!mobileOpen)}
+                className="lg:hidden p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Menu"
+              >
+                {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile menu */}
         {mobileOpen && (
-          <div className="lg:hidden border-t border-black/5 bg-white animate-slide-down">
-            <div className="page-container py-3 space-y-0.5">
-              {[
-                { to: '/', label: 'Trang chủ' },
-                { to: '/gioi-thieu', label: 'Giới thiệu' },
-                { to: '/hinh-anh', label: 'Hình ảnh' },
-                { to: '/video', label: 'Video' },
-                { to: '/tin-tuc', label: 'Tin tức & Sự kiện' },
-                { to: '/lich-thi', label: 'Lịch thi' },
-                { to: '/tra-cuu', label: 'Tra cứu' },
-                { to: '/lai-xe', label: 'Đào tạo lái xe' },
-              ].map(link => (
-                <Link key={link.to} to={link.to} onClick={() => setMobileOpen(false)}
-                  className={`block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium transition-colors ${
-                    location.pathname === link.to
-                      ? 'text-[#007AFF] bg-[#007AFF]/8'
-                      : 'text-[#1C1C1E] hover:bg-black/5'
-                  }`}>
+          <div className="lg:hidden bg-white border-t border-gray-100 shadow-lg animate-slide-down">
+            <div className="page-container py-3 space-y-1">
+              {NAV.map(link => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => setMobileOpen(false)}
+                  className={`block px-4 py-2.5 rounded-lg text-[0.9375rem] font-medium transition-colors ${
+                    isActive(link.to) ? 'text-[#007AFF] bg-[#007AFF]/8' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
                   {link.label}
                 </Link>
               ))}
@@ -148,20 +151,20 @@ export default function Layout() {
                   <Link
                     to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : user.role === 'TEACHER' ? '/teacher' : '/student'}
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#007AFF] bg-[#007AFF]/8"
+                    className="block px-4 py-2.5 rounded-lg text-[0.9375rem] font-medium text-[#007AFF] bg-[#007AFF]/8"
                   >
-                    Dashboard
+                    Vào hệ thống
                   </Link>
                   <Link
                     to="/profile"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#1C1C1E] hover:bg-black/5"
+                    className="block px-4 py-2.5 rounded-lg text-[0.9375rem] font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Tài khoản của tôi
                   </Link>
                   <button
                     onClick={() => { handleLogout(); setMobileOpen(false); }}
-                    className="w-full text-left px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#FF3B30] hover:bg-red-50"
+                    className="w-full text-left px-4 py-2.5 rounded-lg text-[0.9375rem] font-medium text-red-500 hover:bg-red-50"
                   >
                     Đăng xuất
                   </button>
@@ -171,30 +174,30 @@ export default function Layout() {
                   <Link
                     to="/login"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl text-[0.9375rem] font-medium text-[#1C1C1E] hover:bg-black/5"
+                    className="block px-4 py-2.5 rounded-lg text-[0.9375rem] font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Đăng nhập
                   </Link>
                   <Link
                     to="/register"
                     onClick={() => setMobileOpen(false)}
-                    className="block w-full text-center btn-primary mt-1"
+                    className="block w-full text-center bg-[#007AFF] text-white font-semibold py-3 rounded-full mt-1"
                   >
-                    Đăng ký khóa học
+                    Đăng ký ngay
                   </Link>
                 </>
               )}
             </div>
           </div>
         )}
-      </nav>
+      </header>
 
       {/* Main Content */}
-      <main className={isHome ? '' : 'pt-12 sm:pt-14'}>
+      <main className="flex-1">
         <Outlet />
       </main>
 
-      {/* Footer — iOS style */}
+      {/* Footer */}
       <footer className="bg-[#F2F2F7] text-[#8E8E93] pt-12 pb-8 border-t border-black/5">
         <div className="page-container">
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
@@ -208,7 +211,9 @@ export default function Layout() {
               <h4 className="text-[#1C1C1E] font-semibold mb-3 text-[0.8125rem]">Liên kết nhanh</h4>
               <div className="space-y-2">
                 <Link to="/" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Trang chủ</Link>
-                <Link to="/login" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Đăng nhập</Link>
+                <Link to="/gioi-thieu" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Giới thiệu</Link>
+                <Link to="/tin-tuc" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Tin tức & Sự kiện</Link>
+                <Link to="/lai-xe" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Đào tạo lái xe</Link>
                 <Link to="/register" className="block text-[0.8125rem] text-[#8E8E93] hover:text-[#007AFF] transition-colors">Đăng ký</Link>
               </div>
             </div>
