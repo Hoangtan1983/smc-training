@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 const stats = [
-  { value: 98, suffix: '+', label: 'Học viên & tài khoản' },
+  { value: 1000, suffix: '+', label: 'Học viên & tài khoản' },
   { value: 2, suffix: '', label: 'Hạng chứng chỉ UAV' },
   { value: 140, suffix: 'h', label: 'Chương trình VLOS' },
   { value: 296, suffix: 'h', label: 'Chương trình BVLOS' },
