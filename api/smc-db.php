@@ -383,6 +383,14 @@ if ($action === 'record-payment') {
             $st = ($fp > 0 && $tp >= $fp) ? 'paid' : ($tp > 0 ? 'partial' : 'pending');
             DB::execute("UPDATE invoices SET status=?, updated_at=NOW() WHERE enrollment_id=?", [$st, $enrollmentId]);
         }
+        // Liên thông với chuỗi duyệt 3 cấp: ghi dấu Kế toán đã duyệt vào hồ sơ.
+        // Trước đây record-payment chỉ cập nhật tiền/hồ sơ mà không ghi approval_accountant_by,
+        // khiến Admin vẫn thấy hồ sơ "chờ Kế toán duyệt" dù học viên đã nộp đủ.
+        $approverName = '';
+        $appr = DB::selectOne("SELECT full_name FROM users WHERE id = ?", [$userId]);
+        if ($appr) $approverName = $appr['full_name'] ?? '';
+        DB::execute("UPDATE enrollments SET approval_accountant_by=?, approval_accountant_at=NOW(), approval_accountant_name=?, updated_at=NOW() WHERE id=?",
+            [$userId, $approverName, $enrollmentId]);
         $paymentStatus = 'approved';
         $message = 'Đã xác nhận thanh toán tiền mặt! Hồ sơ đã được cập nhật liên thông toàn hệ thống.';
     } else {
@@ -495,6 +503,13 @@ if ($action === 'confirm-receipt') {
         $st = ($fp > 0 && $tp >= $fp) ? 'paid' : ($tp > 0 ? 'partial' : 'pending');
         DB::execute("UPDATE invoices SET status=?, updated_at=NOW() WHERE enrollment_id=?", [$st, (int)$payment['enrollment_id']]);
     }
+    // Liên thông chuỗi duyệt 3 cấp: ghi dấu Kế toán đã duyệt vào hồ sơ.
+    $userId = dbGetUserId($auth);
+    $approverName = '';
+    $appr = DB::selectOne("SELECT full_name FROM users WHERE id = ?", [$userId]);
+    if ($appr) $approverName = $appr['full_name'] ?? '';
+    DB::execute("UPDATE enrollments SET approval_accountant_by=?, approval_accountant_at=NOW(), approval_accountant_name=?, updated_at=NOW() WHERE id=?",
+        [$userId, $approverName, (int)$payment['enrollment_id']]);
     $data = $result[0] ?? [];
 
     $fromStatus = $payment['status'] === 'staff_confirmed' ? 'tiền mặt (nhân viên đã xác nhận)' : 'chuyển khoản';

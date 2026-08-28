@@ -247,7 +247,7 @@ export default function AdminEnrollments() {
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div><span className="text-gray-400">CMND/CCCD:</span> <span className={enr.documents?.id_card?.status === 'verified' ? 'text-green-600 font-medium' : 'text-amber-600'}>{enr.documents?.id_card?.status || 'Chưa nộp'}</span></div>
                 <div><span className="text-gray-400">Sức khỏe:</span> <span className={enr.documents?.health_cert?.status === 'verified' ? 'text-green-600 font-medium' : 'text-amber-600'}>{enr.documents?.health_cert?.status || 'Chưa nộp'}</span></div>
-                <div><span className="text-gray-400">Học phí:</span> <span className={enr.payment?.status === 'paid' ? 'text-green-600 font-medium' : 'text-red-500'}>{enr.payment?.amount?.toLocaleString('vi-VN') || '0'} VNĐ — {enr.payment?.status === 'paid' ? 'Đã TT' : 'Chưa TT'}</span></div>
+                <div><span className="text-gray-400">Học phí:</span> <span className={enr.payment_status === 'fully_paid' ? 'text-green-600 font-medium' : enr.payment_status === 'partially_paid' ? 'text-amber-600' : 'text-red-500'}>{(Number(enr.paid_amount) || 0).toLocaleString('vi-VN')} VNĐ — {enr.payment_status === 'fully_paid' ? 'Đã TT đủ' : enr.payment_status === 'partially_paid' ? 'TT một phần' : 'Chưa TT'}</span></div>
               </div>
               <div className="flex gap-2 mt-3">
                 {enr.status !== 'active' && <button onClick={() => handleApprove(enr.id)} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Duyệt</button>}
