@@ -1,8 +1,8 @@
 import LaiXePageContent from './LaiXePageContent';
 
 const FALLBACK = `
-<h2>Hạng A — Xe máy từ 175 cm³ trở lên</h2>
-<p>Hạng A cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh từ 175 cm³ trở lên, bao gồm các dòng xe phân khối lớn.</p>
+<h2>Hạng A — Xe máy trên 125 cm³ & xe máy điện</h2>
+<p>Hạng A cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh trên 125 cm³ hoặc có công suất động cơ điện trên 11 kW, bao gồm các dòng xe phân khối lớn.</p>
 <h3>Nội dung đào tạo</h3>
 <ul>
 <li>Lý thuyết Luật Giao thông đường bộ.</li>

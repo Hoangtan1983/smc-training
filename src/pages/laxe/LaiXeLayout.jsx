@@ -66,7 +66,7 @@ export default function LaiXeLayout() {
 
       <footer className="bg-white border-t border-black/5 mt-auto">
         <div className="page-container py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-sm text-[#8E8E93]">Đào tạo lái xe SMC — Hạng A1 & Hạng A</p>
+          <p className="text-sm text-[#8E8E93]">Đào tạo lái xe SMC — Hạng A1 & Hạng A • Điều 57, Luật Trật tự, an toàn giao thông đường bộ (36/2024/QH15)</p>
           <p className="text-sm text-[#8E8E93] flex items-center gap-1.5">
             <Phone className="w-4 h-4" /> Hotline: 1900 638939
           </p>

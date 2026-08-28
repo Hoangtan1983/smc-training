@@ -1,8 +1,8 @@
 import LaiXePageContent from './LaiXePageContent';
 
 const FALLBACK = `
-<h2>Hạng A1 — Xe máy đến 175 cm³</h2>
-<p>Hạng A1 cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh từ 50 cm³ đến dưới 175 cm³. Đây là hạng bằng phổ biến nhất cho người điều khiển xe máy thông thường.</p>
+<h2>Hạng A1 — Xe máy đến 125 cm³ & xe máy điện</h2>
+<p>Hạng A1 cho phép điều khiển xe mô tô hai bánh có dung tích xi-lanh đến 125 cm³ hoặc có công suất động cơ điện đến 11 kW. Đây là hạng bằng phổ biến nhất cho người điều khiển xe máy (bao gồm xe máy điện) thông thường.</p>
 <h3>Nội dung đào tạo</h3>
 <ul>
 <li>Lý thuyết Luật Giao thông đường bộ.</li>
