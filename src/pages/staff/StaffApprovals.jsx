@@ -50,6 +50,7 @@ export default function StaffApprovals() {
   const [expandedId, setExpandedId] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [rankModal, setRankModal] = useState(null);
+  const [paymentModal, setPaymentModal] = useState(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -121,15 +122,17 @@ export default function StaffApprovals() {
     return agency ? (agency.name || agency.agent_name || agency.agentName) : ('Đại lý #' + sid);
   };
 
-  // ── Duyệt tài khoản PENDING → kích hoạt + tạo hồ sơ học phí theo Hạng thi, chuyển cho Kế toán ──
-  const handleApproveAccount = async (user, rank = '') => {
+  // ── Duyệt tài khoản PENDING → kích hoạt + tạo hồ sơ học phí; tiền mặt → kích hoạt ngay ──
+  const handleApproveAccount = async (user, rank = '', payment = null) => {
     try {
       const note = `Duyệt bởi Nhân viên - ${new Date().toLocaleDateString('vi-VN')}`;
-      const res = await apiApproveStudentV2(user.id, note, rank);
+      const res = await apiApproveStudentV2(user.id, note, rank, payment);
       if (res?.needRank || res?.warning) {
         toast.success(`Đã kích hoạt ${user.fullName}. ${res.warning || ''}`, { duration: 6000 });
+      } else if (payment && payment.method === 'cash') {
+        toast.success(`Đã duyệt và kích hoạt ${user.fullName}! (đã thu tiền mặt)`);
       } else {
-        toast.success(`Đã duyệt ${user.fullName} và tạo hồ sơ học phí! Chuyển cho Kế toán đối soát.`);
+        toast.success(`Đã duyệt ${user.fullName}, chờ đối soát thanh toán.`);
       }
       emitDataChange('users', { action: 'approved_pending', userId: user.id });
       emitDataChange('enrollments', { action: 'created', userId: user.id });
@@ -138,6 +141,14 @@ export default function StaffApprovals() {
     } catch (err) {
       toast.error('Lỗi: ' + (err.message || 'Không thể duyệt tài khoản'));
     }
+  };
+
+  // ── Xác nhận hình thức thanh toán khi duyệt tài khoản ──
+  const confirmApproveWithPayment = async (method) => {
+    const { user, rank, amount } = paymentModal;
+    setPaymentModal(null);
+    const payment = (method === 'cash' && amount) ? { method: 'cash', amount: Number(amount) } : null;
+    await handleApproveAccount(user, rank, payment);
   };
 
   // ── Từ chối tài khoản ──
@@ -328,7 +339,7 @@ export default function StaffApprovals() {
                   <div className="flex gap-2 sm:flex-col sm:min-w-[120px]">
                     <button
                       onClick={() => {
-                        if (user.rank === 'A' || user.rank === 'B') handleApproveAccount(user, user.rank);
+                        if (user.rank === 'A' || user.rank === 'B') setPaymentModal({ user, rank: user.rank, amount: '' });
                         else setRankModal(user);
                       }}
                       className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center justify-center gap-1.5"
@@ -471,13 +482,13 @@ export default function StaffApprovals() {
               </p>
               <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => { const u = rankModal; setRankModal(null); handleApproveAccount(u, 'A'); }}
+                  onClick={() => { const u = rankModal; setRankModal(null); setPaymentModal({ user: u, rank: 'A', amount: '' }); }}
                   className="w-full px-4 py-3 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
                 >
                   Hạng A — VLOS (15.000.000 ₫)
                 </button>
                 <button
-                  onClick={() => { const u = rankModal; setRankModal(null); handleApproveAccount(u, 'B'); }}
+                  onClick={() => { const u = rankModal; setRankModal(null); setPaymentModal({ user: u, rank: 'B', amount: '' }); }}
                   className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
                 >
                   Hạng B — BVLOS (25.000.000 ₫)
@@ -485,6 +496,49 @@ export default function StaffApprovals() {
               </div>
               <button
                 onClick={() => setRankModal(null)}
+                className="w-full px-4 py-2 text-gray-500 hover:text-gray-700 text-sm transition"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal chọn hình thức thanh toán khi duyệt ── */}
+      {paymentModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPaymentModal(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Xác nhận thanh toán</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Học viên <span className="font-semibold">{paymentModal.user.fullName}</span> — {paymentModal.rank === 'A' ? 'Hạng A (VLOS)' : 'Hạng B (BVLOS)'}. Chọn hình thức nộp học phí:
+              </p>
+              <input
+                type="number"
+                value={paymentModal.amount}
+                onChange={e => setPaymentModal({ ...paymentModal, amount: e.target.value })}
+                placeholder="Số tiền nộp (chỉ nhập khi thu tiền mặt)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => confirmApproveWithPayment('cash')}
+                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
+                >
+                  💵 Tiền mặt — hoàn tất ngay
+                </button>
+                <button
+                  onClick={() => confirmApproveWithPayment('bank_transfer')}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                >
+                  🏦 Chuyển khoản — chờ đối soát
+                </button>
+              </div>
+              <button
+                onClick={() => setPaymentModal(null)}
                 className="w-full px-4 py-2 text-gray-500 hover:text-gray-700 text-sm transition"
               >
                 Hủy

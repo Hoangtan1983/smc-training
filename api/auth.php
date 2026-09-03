@@ -542,6 +542,60 @@ if (($parts[0] ?? '') === 'update-stage') {
     jsonResponse(['success' => true, 'stage' => $stage, 'status' => $status]);
 }
 
+// ── Ghi nhận thanh toán (cash) + kích hoạt học viên & hồ sơ ──
+// Dùng chung cho: Nhân viên thu tiền mặt (approve-student) và Kế toán đối soát (approve-enrollment).
+// Thay cho luồng 3 cấp cũ: nộp đủ tiền → active ngay, không cần bước Admin duyệt cuối.
+function recordPaymentAndActivate($enrId, $amount, $collectorId, $note = '') {
+    $enr = DB::selectOne("SELECT * FROM enrollments WHERE id = ?", [$enrId]);
+    if (!$enr) return ['error' => 'Không tìm thấy hồ sơ'];
+    $final = (int)($enr['final_amount'] ?? 0);
+    $curPaid = (int)($enr['paid_amount'] ?? 0);
+    $newPaid = $curPaid + $amount;
+    if ($final > 0 && $amount > $final - $curPaid) return ['error' => 'Số tiền nộp vượt quá số tiền còn nợ'];
+
+    $paySeq = (int)(DB::selectOne("SELECT COALESCE(MAX(id), 0) m FROM payments")['m'] ?? 0) + 1;
+    $receiptCode = 'PT-' . date('Y') . '-' . str_pad($paySeq, 5, '0', STR_PAD_LEFT);
+    $invRow = DB::selectOne("SELECT id FROM invoices WHERE enrollment_id = ? LIMIT 1", [$enrId]);
+    $invoiceId = $invRow['id'] ?? null;
+
+    $status = ($final > 0 && $newPaid >= $final) ? 'fully_paid' : (($newPaid > 0) ? 'partially_paid' : 'unpaid');
+    $eligible = ($final > 0 && $newPaid >= $final) ? 1 : 0;
+
+    DB::begin();
+    try {
+        DB::insert(
+            "INSERT INTO payments (receipt_code, enrollment_id, invoice_id, amount, payment_method, collector_id, approved_by, status, note, approved_at)
+             VALUES (?,?,?,?,'cash',?,?,'approved',?,NOW())",
+            [$receiptCode, $enrId, $invoiceId, $amount, (int)$collectorId, (int)$collectorId, $note]
+        );
+        DB::execute("UPDATE enrollments SET paid_amount=?, payment_status=?, eligible_for_exam=?, updated_at=NOW() WHERE id=?",
+            [$newPaid, $status, $eligible, $enrId]);
+        if ($invoiceId) {
+            DB::execute("UPDATE invoices SET total_paid = total_paid + ?, updated_at = NOW() WHERE id=?", [$amount, $invoiceId]);
+            $st = ($final > 0 && $newPaid >= $final) ? 'paid' : ($newPaid > 0 ? 'partial' : 'pending');
+            DB::execute("UPDATE invoices SET status=? WHERE id=?", [$st, $invoiceId]);
+        }
+        // Kích hoạt tài khoản học viên (account approved) — bỏ bước Admin duyệt cuối.
+        DB::execute("UPDATE users SET status='active', updated_at=NOW() WHERE id=?", [(int)$enr['student_id']]);
+        // Hồ sơ active khi đã đóng đủ tiền; đóng thiếu thì giữ 'pending' (nợ) — học viên vẫn active.
+        if ($final > 0 && $newPaid >= $final) {
+            DB::execute("UPDATE enrollments SET enrollment_status='active', updated_at=NOW() WHERE id=?", [$enrId]);
+        }
+        DB::commit();
+    } catch (Exception $e) {
+        DB::rollback();
+        return ['error' => 'Lỗi ghi nhận thanh toán: ' . $e->getMessage()];
+    }
+    return [
+        'success' => true,
+        'paid' => $newPaid,
+        'final' => $final,
+        'remaining' => max(0, $final - $newPaid),
+        'paymentStatus' => $status,
+        'receiptCode' => $receiptCode,
+    ];
+}
+
 // ──── APPROVE STUDENT ────
 // Duyệt tài khoản PENDING: kích hoạt + tạo hồ sơ học phí theo Hạng thi (A→VLOS, B→BVLOS) → chuyển Kế toán
 if (($parts[0] ?? '') === 'approve-student') {
@@ -625,7 +679,7 @@ if (($parts[0] ?? '') === 'approve-student') {
             [$invCode, $enrId, $basePrice, $discountAmount, $finalPrice, $agencyId ? (string)$agencyId : '', $agencyName, $discountPercent, $discountAmount, $student['full_name'], $student['email'], $student['phone'], $userId]
         );
 
-        // Đánh dấu Nhân viên đã duyệt hồ sơ (step='staff') → chuyển sang Kế toán
+        // Đánh dấu Nhân viên đã duyệt hồ sơ (step='staff')
         DB::execute("UPDATE enrollments SET approval_staff_by = ?, approval_staff_at = NOW(), approval_staff_name = ?, updated_at = NOW() WHERE id = ?",
             [$userId, $staff['full_name'] ?? '', $enrId]);
 
@@ -635,7 +689,24 @@ if (($parts[0] ?? '') === 'approve-student') {
         jsonResponse(['error' => 'Lỗi: ' . $e->getMessage()], 500);
     }
 
-    jsonResponse(['success' => true, 'message' => 'Đã duyệt tài khoản và tạo hồ sơ học phí, chuyển cho Kế toán', 'enrollmentId' => (string)$enrId, 'enrollmentCode' => $enrCode]);
+    // Tiền mặt → ghi nhận thanh toán + kích hoạt ngay (không cần Kế toán/Admin duyệt thêm)
+    $paymentMethod = strtolower(trim($input['payment_method'] ?? ''));
+    $cashAmount = (int)($input['amount'] ?? 0);
+    $paymentResp = null;
+    if ($paymentMethod === 'cash' && $cashAmount > 0) {
+        $paymentResp = recordPaymentAndActivate($enrId, $cashAmount, $userId, $input['note'] ?? '');
+        if (!empty($paymentResp['error'])) jsonResponse($paymentResp, 400);
+    }
+
+    jsonResponse([
+        'success' => true,
+        'message' => ($paymentMethod === 'cash' && $cashAmount > 0)
+            ? 'Đã duyệt tài khoản, ghi nhận thanh toán và kích hoạt học viên'
+            : 'Đã duyệt tài khoản và tạo hồ sơ học phí (chờ đối soát thanh toán)',
+        'enrollmentId' => (string)$enrId,
+        'enrollmentCode' => $enrCode,
+        'payment' => $paymentResp,
+    ]);
 }
 
 // ──── APPROVE / REJECT ENROLLMENT ────
@@ -671,59 +742,18 @@ if (($parts[0] ?? '') === 'approve-enrollment') {
 
     $paymentInfo = null;
 
-    // Kế toán duyệt + nhập số tiền đã nộp → ghi nhận thanh toán (đủ/thiếu)
+    // Kế toán đối soát + nhập số tiền đã nộp → ghi nhận thanh toán + kích hoạt ngay (bỏ bước Admin duyệt cuối)
     if ($step === 'accountant') {
         $amount = (int)($input['amount'] ?? 0);
         if ($amount > 0) {
-            $enr = DB::selectOne("SELECT * FROM enrollments WHERE id = ?", [$enrId]);
-            if ($enr) {
-                $final = (int)($enr['final_amount'] ?? 0);
-                $curPaid = (int)($enr['paid_amount'] ?? 0);
-                $newPaid = $curPaid + $amount;
-                if ($final > 0 && $amount > $final - $curPaid) {
-                    jsonResponse(['error' => 'Số tiền nộp vượt quá số tiền còn nợ'], 400);
-                }
-
-                $paySeq = (int)(DB::selectOne("SELECT COALESCE(MAX(id), 0) m FROM payments")['m'] ?? 0) + 1;
-                $receiptCode = 'PT-' . date('Y') . '-' . str_pad($paySeq, 5, '0', STR_PAD_LEFT);
-                $invRow = DB::selectOne("SELECT id FROM invoices WHERE enrollment_id = ? LIMIT 1", [$enrId]);
-                $invoiceId = $invRow['id'] ?? null;
-
-                $status = ($final > 0 && $newPaid >= $final) ? 'fully_paid' : (($newPaid > 0) ? 'partially_paid' : 'unpaid');
-                $eligible = ($final > 0 && $newPaid >= $final) ? 1 : 0;
-
-                DB::begin();
-                try {
-                    DB::insert(
-                        "INSERT INTO payments (receipt_code, enrollment_id, invoice_id, amount, payment_method, collector_id, approved_by, status, note, approved_at)
-                         VALUES (?,?,?,?,'cash',?,?,'approved',?,NOW())",
-                        [$receiptCode, $enrId, $invoiceId, $amount, (int)$auth['id'], (int)$auth['id'], $note]
-                    );
-
-                    DB::execute("UPDATE enrollments SET paid_amount=?, payment_status=?, eligible_for_exam=?, updated_at=NOW() WHERE id=?",
-                        [$newPaid, $status, $eligible, $enrId]);
-
-                    if ($invoiceId) {
-                        DB::execute("UPDATE invoices SET total_paid = total_paid + ?, updated_at = NOW() WHERE id=?",
-                            [$amount, $invoiceId]);
-                        // Set status theo final_amount (ngưỡng đóng đủ = giá sau chiết khấu), không phụ thuộc cột final_price
-                        $st = ($final > 0 && $newPaid >= $final) ? 'paid' : ($newPaid > 0 ? 'partial' : 'pending');
-                        DB::execute("UPDATE invoices SET status=? WHERE id=?", [$st, $invoiceId]);
-                    }
-
-                    DB::commit();
-
-                    $paymentInfo = [
-                        'paid' => $newPaid,
-                        'final' => $final,
-                        'remaining' => max(0, $final - $newPaid),
-                        'paymentStatus' => $status,
-                    ];
-                } catch (Exception $e) {
-                    DB::rollback();
-                    jsonResponse(['error' => 'Lỗi ghi nhận thanh toán: ' . $e->getMessage()], 500);
-                }
-            }
+            $payResp = recordPaymentAndActivate($enrId, $amount, (int)$auth['id'], $note);
+            if (!empty($payResp['error'])) jsonResponse($payResp, 400);
+            $paymentInfo = [
+                'paid' => $payResp['paid'],
+                'final' => $payResp['final'],
+                'remaining' => $payResp['remaining'],
+                'paymentStatus' => $payResp['paymentStatus'],
+            ];
         }
     }
 

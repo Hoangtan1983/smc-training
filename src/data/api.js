@@ -241,8 +241,10 @@ export function apiRejectEnrollment(payload) {
   return request('POST', '/reject-enrollment', payload);
 }
 
-export function apiApproveStudentV2(id, note = '', rank = '') {
-  return request('POST', `/approve-student/${id}`, { note, rank });
+export function apiApproveStudentV2(id, note = '', rank = '', payment = null) {
+  const body = { note, rank };
+  if (payment) { body.payment_method = payment.method; body.amount = payment.amount; }
+  return request('POST', `/approve-student/${id}`, body);
 }
 
 // Attendance
