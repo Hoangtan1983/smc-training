@@ -46,7 +46,6 @@ export default function StaffApprovals() {
   const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('accounts'); // default: tài khoản chờ duyệt
   const [expandedId, setExpandedId] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [rankModal, setRankModal] = useState(null);
@@ -224,29 +223,17 @@ export default function StaffApprovals() {
   return (
     <div className="animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-extrabold text-gray-900">Duyệt tài khoản & Phiếu thu</h1>
+        <h1 className="text-2xl font-extrabold text-gray-900">Duyệt học viên</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          {pendingUsers.length} tài khoản chờ duyệt • {pendingTxns.length} phiếu thu chờ duyệt
+          {pendingUsers.length} tài khoản chờ duyệt • {pendingEnrollments.length} chờ đối soát • {pendingTxns.length} phiếu thu chờ duyệt
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {[
-          { key: 'accounts', label: `👤 Tài khoản chờ duyệt (${pendingUsers.length})` },
-          { key: 'pending-enr', label: `📋 Hồ sơ chờ duyệt (${pendingEnrollments.length})` },
-          { key: 'pending-txn', label: `💰 Phiếu thu chờ duyệt (${pendingTxns.length})` },
-          { key: 'all-invoices', label: `📋 Tất cả hóa đơn (${allInvoices.length})` },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === tab.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── TAB: Tài khoản chờ duyệt ── */}
-      {activeTab === 'accounts' && (
+      {/* ── MỤC 1: Học viên chờ duyệt tài khoản ── */}
+      <div className="mb-8">
+        <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <UserCheck className="w-5 h-5 text-amber-500" /> Học viên chờ duyệt tài khoản ({pendingUsers.length})
+        </h2>
         <div className="space-y-3">
           {pendingUsers.length === 0 && (
             <div className="text-center py-12 text-gray-400 bg-white rounded-2xl">
@@ -358,10 +345,13 @@ export default function StaffApprovals() {
             );
           })}
         </div>
-      )}
+      </div>
 
-      {/* ── TAB: Hồ sơ chờ duyệt (Nhân viên duyệt step='staff') ── */}
-      {activeTab === 'pending-enr' && (
+      {/* ── MỤC 2: Chờ đối soát thanh toán ── */}
+      <div className="mb-8">
+        <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-blue-500" /> Chờ đối soát thanh toán ({pendingEnrollments.length})
+        </h2>
         <div className="space-y-3">
           {pendingEnrollments.length === 0 && (
             <div className="text-center py-12 text-gray-400 bg-white rounded-2xl">
@@ -399,10 +389,13 @@ export default function StaffApprovals() {
             </div>
           ))}
         </div>
-      )}
+      </div>
 
-      {/* ── TAB: Phiếu thu chờ duyệt ── */}
-      {activeTab === 'pending-txn' && (
+      {/* ── MỤC 3: Phiếu thu chờ duyệt ── */}
+      <div className="mb-8">
+        <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-emerald-500" /> Phiếu thu chờ duyệt ({pendingTxns.length})
+        </h2>
         <div className="space-y-3">
           {pendingTxns.map(txn => (
             <div key={txn.id} className="card p-4">
@@ -426,10 +419,13 @@ export default function StaffApprovals() {
           ))}
           {pendingTxns.length === 0 && <div className="text-center py-8 text-gray-400">✅ Không có phiếu chờ duyệt</div>}
         </div>
-      )}
+      </div>
 
-      {/* ── TAB: Tất cả hóa đơn ── */}
-      {activeTab === 'all-invoices' && (
+      {/* ── MỤC 4: Tất cả hóa đơn ── */}
+      <div className="mb-8">
+        <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <FileText className="w-5 h-5 text-gray-500" /> Tất cả hóa đơn ({allInvoices.length})
+        </h2>
         <div className="card overflow-hidden">
           <table className="w-full">
             <thead><tr className="border-b bg-gray-50/50">
@@ -467,7 +463,7 @@ export default function StaffApprovals() {
             </tbody>
           </table>
         </div>
-      )}
+      </div>
 
       {/* ── Modal chọn Hạng thi (khi duyệt học viên chưa có hạng) ── */}
       {rankModal && (
