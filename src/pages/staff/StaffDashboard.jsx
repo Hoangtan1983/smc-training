@@ -10,6 +10,7 @@ const formatPrice = (v) => {
 
 export default function StaffDashboard() {
   const { getAllUsers, user } = useAuth();
+  const [users, setUsers] = useState([]);
   const [studentCount, setStudentCount] = useState(0);
   const [enrollments, setEnrollments] = useState([]);
   const [cashSummary, setCashSummary] = useState({ totalHolding: 0, pendingCount: 0, pendingPayments: [] });
@@ -21,7 +22,9 @@ export default function StaffDashboard() {
         apiGetEnrollments().catch(() => []),
         apiStaffCashSummary().catch(() => ({ data: { totalHolding: 0, pendingCount: 0, pendingPayments: [] } })),
       ]);
-      setStudentCount(userData.filter(u => u.role === 'STUDENT').length);
+      const userList = Array.isArray(userData) ? userData : (userData?.users || []);
+      setUsers(userList);
+      setStudentCount(userList.filter(u => u.role === 'STUDENT').length);
       setEnrollments(Array.isArray(enrData) ? enrData : []);
       const cash = cashData?.data || cashData || {};
       setCashSummary({
@@ -41,10 +44,14 @@ export default function StaffDashboard() {
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  // "Hồ sơ chờ duyệt" = hồ sơ chờ NHÂN VIÊN duyệt (chưa có approval_staff_by), thống nhất với StaffApprovals.
-  // Hồ sơ đã qua Nhân viên (đang chờ Kế toán/Admin) KHÔNG tính vào đây.
-  const pending = enrollments.filter(e =>
-    !e.approval_staff_by && (e.enrollment_status === 'pending' || e.status === 'pending')
+  // "Hồ sơ chờ duyệt" = học viên (user) đang chờ NHÂN VIÊN duyệt
+  // — thống nhất với StaffApprovals: đếm user PENDING chưa có enrollment,
+  // KHÔNG đếm enrollment (enrollment chỉ được tạo sau khi đã duyệt).
+  const enrolledUserIds = new Set(enrollments.map(e => e.student_id).filter(Boolean));
+  const pending = users.filter(u =>
+    u.role === 'STUDENT' &&
+    (u.status === 'PENDING' || u.status === 'pending') &&
+    !enrolledUserIds.has(u.id)
   );
 
   return (
@@ -169,9 +176,9 @@ export default function StaffDashboard() {
           </div>
         ) : (
           <div className="divide-y divide-slate-700/50">
-            {pending.slice(0, 10).map((e, i) => (
-              <div key={e.student_id || i} className="p-3 text-sm text-slate-300">
-                {e.student_id || e.studentId} — {e.status || 'pending'}
+            {pending.slice(0, 10).map((u, i) => (
+              <div key={u.id || i} className="p-3 text-sm text-slate-300">
+                {u.fullName || u.full_name || u.email || u.phone || 'Học viên'} — {u.status || 'pending'}
               </div>
             ))}
           </div>

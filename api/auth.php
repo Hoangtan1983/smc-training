@@ -1081,6 +1081,14 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
                 DB::execute("DELETE FROM change_requests WHERE student_id=?", [$studentId]);
                 DB::execute("DELETE FROM certifications WHERE student_id=?", [$studentId]);
                 DB::execute("DELETE FROM enrollments WHERE student_id=?", [$studentId]);
+                // Dọn tham chiếu học viên khỏi student_ids của mọi lớp (tránh "unknown" ghost)
+                foreach (DB::select("SELECT id, student_ids FROM classes") as $gc) {
+                    $gcIds = json_decode($gc['student_ids'] ?? '[]', true) ?: [];
+                    if (in_array((string)$studentId, array_map('strval', $gcIds))) {
+                        $gcIds = array_values(array_filter($gcIds, fn($s) => (string)$s !== (string)$studentId));
+                        DB::execute("UPDATE classes SET student_ids=?, updated_at=NOW() WHERE id=?", [json_encode($gcIds), (int)$gc['id']]);
+                    }
+                }
                 DB::execute("DELETE FROM users WHERE id=?", [$studentId]);
                 DB::commit();
             } catch (Exception $e) {
@@ -1273,6 +1281,14 @@ if (($parts[0] ?? '') === 'users' || (($parts[0] ?? '') === 'auth' && ($parts[1]
             DB::execute("DELETE FROM change_requests WHERE student_id=?", [$mysqlId]);
             DB::execute("DELETE FROM certifications WHERE student_id=?", [$mysqlId]);
             DB::execute("DELETE FROM enrollments WHERE student_id=?", [$mysqlId]);
+            // Dọn tham chiếu học viên khỏi student_ids của mọi lớp (tránh "unknown" ghost)
+            foreach (DB::select("SELECT id, student_ids FROM classes") as $gc) {
+                $gcIds = json_decode($gc['student_ids'] ?? '[]', true) ?: [];
+                if (in_array((string)$mysqlId, array_map('strval', $gcIds))) {
+                    $gcIds = array_values(array_filter($gcIds, fn($s) => (string)$s !== (string)$mysqlId));
+                    DB::execute("UPDATE classes SET student_ids=?, updated_at=NOW() WHERE id=?", [json_encode($gcIds), (int)$gc['id']]);
+                }
+            }
             DB::execute("DELETE FROM users WHERE id=?", [$mysqlId]);
             DB::commit();
         } catch (Exception $e) {

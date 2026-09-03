@@ -303,10 +303,10 @@ export default function StaffClasses() {
                     </div>
                   </div>
 
-                  {/* Student list */}
-                  {(cls.student_ids || []).length > 0 && (
+                  {/* Student list (lọc bỏ id không còn tồn tại để không hiện "Unknown") */}
+                  {(cls.student_ids || []).filter(sid => getStudentName(sid) !== 'Unknown').length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1">
-                      {(cls.student_ids || []).map(sid => (
+                      {(cls.student_ids || []).filter(sid => getStudentName(sid) !== 'Unknown').map(sid => (
                         <span key={sid} className="badge bg-blue-50 text-blue-700 text-xs flex items-center gap-1">
                           <UserCheck className="w-3 h-3" /> {getStudentName(sid)}
                         </span>
