@@ -69,3 +69,6 @@ tai-lieu/
 
 # Sensitive
 *.json.bak
+
+# Bộ công cụ deploy cục bộ (chứa thông tin FTP + backup production)
+.deploy/
