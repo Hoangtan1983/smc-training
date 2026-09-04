@@ -9,7 +9,7 @@ import {
 } from '../../data/api';
 import {
   UserCheck, UserX, Search, Clock, CheckCircle, XCircle, Mail, Phone,
-  CreditCard, AlertTriangle, DollarSign, ChevronDown, ChevronUp,
+  AlertTriangle, DollarSign, ChevronDown, ChevronUp,
   BookOpen, Filter, FileText, Building2, UserPlus, ShieldCheck
 } from 'lucide-react';
 import { formatCurrency, showPrompt } from '../../utils/format';
@@ -220,33 +220,75 @@ export default function StaffApprovals() {
     try { return new Date(d).toLocaleDateString('vi-VN'); } catch { return d; }
   };
 
+  // ── Gộp 2 danh sách duyệt (tài khoản PENDING + hồ sơ PENDING) thành 1 ──
+  const approvalItems = [
+    ...pendingUsers.map(u => ({ type: 'user', key: `u-${u.id}`, data: u })),
+    ...pendingEnrollments.map(e => ({ type: 'enrollment', key: `e-${e.id}`, data: e })),
+  ].sort((a, b) => {
+    const na = (a.type === 'user' ? a.data.fullName : a.data.student_name) || '';
+    const nb = (b.type === 'user' ? b.data.fullName : b.data.student_name) || '';
+    return na.localeCompare(nb, 'vi');
+  });
+
   return (
     <div className="animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-extrabold text-gray-900">Duyệt học viên</h1>
+        <h1 className="text-2xl font-extrabold text-gray-900">Duyệt hồ sơ</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          {pendingUsers.length} tài khoản chờ duyệt • {pendingEnrollments.length} chờ đối soát • {pendingTxns.length} phiếu thu chờ duyệt
+          {approvalItems.length} hồ sơ chờ duyệt • {pendingTxns.length} phiếu thu chờ duyệt
         </p>
       </div>
 
-      {/* ── MỤC 1: Học viên chờ duyệt tài khoản ── */}
+      {/* ── Duyệt hồ sơ (gộp tài khoản + hồ sơ thành 1 danh sách) ── */}
       <div className="mb-8">
         <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-          <UserCheck className="w-5 h-5 text-amber-500" /> Học viên chờ duyệt tài khoản ({pendingUsers.length})
+          <UserCheck className="w-5 h-5 text-amber-500" /> Học viên chờ duyệt ({approvalItems.length})
         </h2>
         <div className="space-y-3">
-          {pendingUsers.length === 0 && (
+          {approvalItems.length === 0 && (
             <div className="text-center py-12 text-gray-400 bg-white rounded-2xl">
               <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-green-300" />
-              <p className="text-lg font-medium">Tất cả tài khoản đã được duyệt</p>
-              <p className="text-sm mt-1">Không có tài khoản nào đang chờ duyệt</p>
+              <p className="text-lg font-medium">Tất cả hồ sơ đã được duyệt</p>
+              <p className="text-sm mt-1">Không có học viên nào đang chờ duyệt</p>
             </div>
           )}
-          {pendingUsers.map(user => {
+          {approvalItems.map(item => {
+            if (item.type === 'enrollment') {
+              const enr = item.data;
+              return (
+                <div key={item.key} className="card p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                          {(enr.student_name || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900">{enr.student_name || `Học viên #${enr.student_id}`}</h3>
+                          <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                            <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{enr.course_name || '—'}</span>
+                            <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{enr.enrollment_code || ''}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 sm:min-w-[120px]">
+                      <button
+                        onClick={() => handleApproveEnrollment(enr)}
+                        className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle className="w-4 h-4" /> Duyệt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            const user = item.data;
             const reg = getRegistration(user);
             const agencyName = getAgencyName(user);
             return (
-              <div key={user.id} className="card p-4 sm:p-5">
+              <div key={item.key} className="card p-4 sm:p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-1">
@@ -344,50 +386,6 @@ export default function StaffApprovals() {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      {/* ── MỤC 2: Chờ đối soát thanh toán ── */}
-      <div className="mb-8">
-        <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-          <CreditCard className="w-5 h-5 text-blue-500" /> Chờ đối soát thanh toán ({pendingEnrollments.length})
-        </h2>
-        <div className="space-y-3">
-          {pendingEnrollments.length === 0 && (
-            <div className="text-center py-12 text-gray-400 bg-white rounded-2xl">
-              <FileText className="w-12 h-12 mx-auto mb-3 text-green-300" />
-              <p className="text-lg font-medium">Không có hồ sơ chờ duyệt</p>
-              <p className="text-sm mt-1">Hồ sơ sẽ xuất hiện ở đây khi Đại lý nhập học viên có khóa học</p>
-            </div>
-          )}
-          {pendingEnrollments.map(enr => (
-            <div key={enr.id} className="card p-4 sm:p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
-                      {(enr.student_name || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900">{enr.student_name || `Học viên #${enr.student_id}`}</h3>
-                      <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{enr.course_name || '—'}</span>
-                        <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{enr.enrollment_code || ''}</span>
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2 sm:min-w-[120px]">
-                  <button
-                    onClick={() => handleApproveEnrollment(enr)}
-                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center justify-center gap-1.5"
-                  >
-                    <CheckCircle className="w-4 h-4" /> Duyệt hồ sơ
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 

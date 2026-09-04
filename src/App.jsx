@@ -173,7 +173,7 @@ function AppRoutes() {
       <Route path="/staff/*" element={<ProtectedByRole role="STAFF"><StaffLayout /></ProtectedByRole>}>
         <Route index element={<StaffDashboard />} />
         <Route path="khoa-hoc" element={<StaffCourses />} />
-        <Route path="duyet-tai-khoan" element={<StaffApprovals />} />
+        <Route path="duyet-ho-so" element={<StaffApprovals />} />
         <Route path="doi-lop-bao-luu" element={<StaffChangeRequests />} />
         <Route path="tai-lieu" element={<AdminFiles />} />
         <Route path="lop-hoc" element={<StaffClasses />} />

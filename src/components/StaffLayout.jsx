@@ -9,7 +9,7 @@ export default function StaffLayout() {
       iconColor="text-amber-400"
       links={[
         { to: '/staff', label: 'Tổng quan', icon: BarChart3 },
-        { to: '/staff/duyet-tai-khoan', label: 'Duyệt tài khoản', icon: UserCheck },
+        { to: '/staff/duyet-ho-so', label: 'Duyệt hồ sơ', icon: UserCheck },
         { to: '/staff/khoa-hoc', label: 'Khóa học', icon: BookOpen },
         { to: '/staff/lop-hoc', label: 'Lớp học & Xếp lớp', icon: School },
         { to: '/staff/hoc-vien', label: 'Học viên', icon: Users },
