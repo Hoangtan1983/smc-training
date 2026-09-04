@@ -291,6 +291,19 @@ if ($action === 'create-invoice') {
         [$basePrice, $discountAmount, $finalPrice, $enrollmentId]
     );
 
+    // Xếp lớp (nếu có chọn) → đồng bộ enrollment.class_id + classes.student_ids
+    if ($classId) {
+        $targetClass = DB::selectOne("SELECT * FROM classes WHERE id=?", [(int)$classId]);
+        if ($targetClass) {
+            DB::execute("UPDATE enrollments SET class_id=?, updated_at=NOW() WHERE id=?", [(int)$classId, $enrollmentId]);
+            $clsIds = json_decode($targetClass['student_ids'] ?? '[]', true) ?: [];
+            if (!in_array((string)$studentId, array_map('strval', $clsIds))) {
+                $clsIds[] = (string)$studentId;
+                DB::execute("UPDATE classes SET student_ids=?, updated_at=NOW() WHERE id=?", [json_encode($clsIds), (int)$classId]);
+            }
+        }
+    }
+
     // Lấy invoice vừa tạo
     $invoice = DB::selectOne("SELECT * FROM invoices WHERE enrollment_id = ?", [$enrollmentId]);
 

@@ -225,6 +225,8 @@ function mapDbRow($row, string $collection): array {
                 'enrollment_code' => $row['enrollment_code'] ?? '',
                 'student_id' => (string)$row['student_id'],
                 'course_id' => (string)$row['course_id'],
+                'class_id' => (string)($row['class_id'] ?? ''),
+                'classId' => (string)($row['class_id'] ?? ''),
                 'course_name' => $row['course_name'] ?? '',
                 'student_name' => $row['student_name'] ?? '',
                 'total_amount' => (float)($row['total_amount'] ?? 0),
@@ -488,6 +490,9 @@ if (($parts[0] ?? '') === 'assign-class') {
         }
         $newStudentIds[] = (string)$studentId;
         DB::execute("UPDATE classes SET student_ids=?, updated_at=NOW() WHERE id=?", [json_encode($newStudentIds), (int)$classId]);
+
+        // Đồng bộ enrollment.class_id — nguồn chính xác cho các trang danh mục
+        DB::execute("UPDATE enrollments SET class_id=?, updated_at=NOW() WHERE student_id=?", [(int)$classId, (int)$student['id']]);
 
         DB::commit();
     } catch (Exception $e) {
@@ -1037,6 +1042,23 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
                      json_encode($studentIds), $rank, json_encode($teacherIds),
                      $input['status'] ?? $row['status'], $id]
                 );
+                // Đồng bộ enrollment.class_id khi danh sách học viên của lớp thay đổi
+                if (is_array($studentIds)) {
+                    $oldIds = array_map('strval', json_decode($row['student_ids'] ?? '[]', true) ?: []);
+                    $newIds = array_map('strval', $studentIds);
+                    $removed = array_values(array_diff($oldIds, $newIds));
+                    $added = array_values(array_diff($newIds, $oldIds));
+                    if ($removed) {
+                        $ph = implode(',', array_fill(0, count($removed), '?'));
+                        DB::execute("UPDATE enrollments SET class_id=NULL, updated_at=NOW() WHERE class_id=? AND student_id IN ($ph)",
+                            array_merge([$id], array_map('intval', $removed)));
+                    }
+                    if ($added) {
+                        $ph = implode(',', array_fill(0, count($added), '?'));
+                        DB::execute("UPDATE enrollments SET class_id=?, updated_at=NOW() WHERE student_id IN ($ph)",
+                            array_merge([$id], array_map('intval', $added)));
+                    }
+                }
                 break;
             case 'agencies':
                 DB::execute(
@@ -1126,6 +1148,10 @@ function handleCRUD($collection, $allowedRoles = ['ADMIN', 'STAFF'], $publicGet 
                 jsonResponse(['error' => 'Lỗi: ' . $e->getMessage()], 500);
             }
         } else {
+            if ($collection === 'classes') {
+                // Khi xóa lớp, gỡ tham chiếu class_id của các học viên trong lớp
+                DB::execute("UPDATE enrollments SET class_id=NULL, updated_at=NOW() WHERE class_id=?", [$id]);
+            }
             DB::execute("DELETE FROM `{$table}` WHERE id=?", [$id]);
         }
         jsonResponse(['success' => true]);
