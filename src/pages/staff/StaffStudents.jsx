@@ -98,7 +98,7 @@ export default function StaffStudents() {
     if (cid) return classes.find(c => c.id === cid) || null;
     const t = getTuition(studentId);
     if (t?.classId) return classes.find(c => c.id === t.classId) || null;
-    return classes.find(c => (c.student_ids || []).includes(studentId)) || null;
+    return classes.find(c => (c.student_ids || []).some(sid => String(sid) === String(studentId))) || null;
   };
 
   const getStudentRank = (studentId) => {

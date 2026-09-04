@@ -64,7 +64,7 @@ export default function StaffUserManager() {
     if (cid) return classes.find(c => c.id === cid)?.name || '—';
     const t = getTuition(sid);
     if (t?.className) return t.className;
-    return classes.find(c => (c.student_ids || []).includes(sid))?.name || '—';
+    return classes.find(c => (c.student_ids || []).some(x => String(x) === String(sid)))?.name || '—';
   };
 
   const getRank = (s) => {

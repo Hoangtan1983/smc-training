@@ -75,7 +75,7 @@ export default function TeacherStudents() {
   const myStudents = students.filter(s => studentIds.includes(s.id));
 
   const getStudentClass = (studentId) => {
-    return myClasses.find(c => (c.student_ids || []).includes(studentId));
+    return myClasses.find(c => (c.student_ids || []).some(sid => String(sid) === String(studentId)));
   };
 
   const getStudentCourseName = (studentId) => {

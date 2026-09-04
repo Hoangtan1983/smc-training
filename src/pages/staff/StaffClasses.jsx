@@ -123,11 +123,11 @@ export default function StaffClasses() {
 
     const studentIds = [...(cls.student_ids || [])];
 
-    if (studentIds.includes(studentId)) return toast.error('Học viên đã có trong lớp này');
+    if (studentIds.some(sid => String(sid) === String(studentId))) return toast.error('Học viên đã có trong lớp này');
     if (studentIds.length >= (cls.max_students || 20)) return toast.error('Lớp đã đầy');
 
     // Kiểm tra tương thích hạng: học viên đăng ký BVLOS không thể xếp vào lớp VLOS và ngược lại
-    const student = allStudents.find(s => s.id === studentId);
+    const student = allStudents.find(s => String(s.id) === String(studentId));
     if (student) {
       const classRank = cls.rank || '';
       const classCourseId = cls.course_id || '';
@@ -152,7 +152,7 @@ export default function StaffClasses() {
     // Dùng apiAssignClass để server tự động gỡ khỏi lớp cũ + cập nhật enrollment + tuition
     try {
       // Tìm lớp cũ của học viên (nếu có) từ dữ liệu classes để truyền oldClassId
-      const oldClass = classes.find(c => (c.student_ids || []).includes(studentId));
+      const oldClass = classes.find(c => (c.student_ids || []).some(sid => String(sid) === String(studentId)));
       await apiAssignClass(studentId, classId, oldClass?.id || '');
     } catch (e) {
       console.error('Lỗi xếp lớp:', e);
@@ -227,7 +227,7 @@ export default function StaffClasses() {
     if (!ids || ids.length === 0) return 'Chưa phân công';
     return ids.map(id => teachers.find(t => t.id === id)?.fullName || id).join(', ');
   };
-  const getStudentName = (id) => allStudents.find(s => s.id === id)?.fullName || 'Unknown';
+  const getStudentName = (id) => allStudents.find(s => String(s.id) === String(id))?.fullName || 'Unknown';
 
   // Multi-select teacher helpers
   const toggleTeacher = (tid) => {

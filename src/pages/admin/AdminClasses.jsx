@@ -261,7 +261,7 @@ export default function AdminClasses() {
     if (!ids || ids.length === 0) return 'Chưa phân công';
     return ids.map(id => teachers.find(t => t.id === id)?.fullName || id).join(', ');
   };
-  const getStudentInfo = sid => allUsers.find(u => u.id === sid);
+  const getStudentInfo = sid => allUsers.find(u => String(u.id) === String(sid));
   const getRegForStudent = sid => registrations.find(r => r.studentId === sid || r.id === sid) || {};
 
   if (loading) return <div className="text-center py-12"><div className="spinner mx-auto mb-4" /><p className="text-gray-500">Đang tải...</p></div>;

@@ -33,7 +33,7 @@ export default function StudentClasses() {
         foundClass = classes.find(c => c.id === classId);
       }
       if (!foundClass) {
-        foundClass = classes.find(c => (c.student_ids || []).includes(user.id)) || null;
+        foundClass = classes.find(c => (c.student_ids || []).some(sid => String(sid) === String(user.id))) || null;
       }
       setMyClass(foundClass || null);
 

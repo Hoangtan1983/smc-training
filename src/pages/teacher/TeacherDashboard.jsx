@@ -231,7 +231,7 @@ export default function TeacherDashboard() {
             myClasses.map(cls => {
               const course = courses.find(c => c.id === cls.course_id);
               const studentCount = (cls.student_ids || []).length;
-              const classStudents = allUsers.filter(u => (cls.student_ids || []).includes(u.id));
+              const classStudents = allUsers.filter(u => (cls.student_ids || []).some(sid => String(sid) === String(u.id)));
               const scheduleCount = (cls.schedule || []).length;
 
               return (

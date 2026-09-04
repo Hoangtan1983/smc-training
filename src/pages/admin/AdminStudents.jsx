@@ -74,7 +74,7 @@ export default function AdminStudents() {
     const t = getTuition(studentId);
     if (t?.className) return t.className;
     // Fallback: kiểm tra trong class.student_ids
-    const cls = classes.find(c => (c.student_ids || []).includes(studentId));
+    const cls = classes.find(c => (c.student_ids || []).some(sid => String(sid) === String(studentId)));
     return cls?.name || '—';
   };
 

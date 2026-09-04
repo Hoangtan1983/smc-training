@@ -78,7 +78,7 @@ export default function StudentDashboard() {
       const classId = enr?.class_id || '';
       let foundClass = classId ? classes.find(c => c.id === classId) : null;
       if (!foundClass) {
-        foundClass = classes.find(c => (c.student_ids || []).includes(user.id)) || null;
+        foundClass = classes.find(c => (c.student_ids || []).some(sid => String(sid) === String(user.id))) || null;
       }
       setMyClass(foundClass || null);
 
