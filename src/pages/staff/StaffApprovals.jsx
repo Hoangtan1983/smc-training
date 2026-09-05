@@ -41,6 +41,7 @@ export default function StaffApprovals() {
   const [allInvoices, setAllInvoices] = useState([]);
   const [pendingTxns, setPendingTxns] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [agencies, setAgencies] = useState([]);
   const [pendingEnrollments, setPendingEnrollments] = useState([]);
@@ -67,6 +68,7 @@ export default function StaffApprovals() {
       setAgencies(Array.isArray(agencyRes) ? agencyRes : (agencyRes?.data || []));
 
       const users = userRes?.users || userRes || [];
+      setAllUsers(users);
       const allEnrollments = enrRes?.data || [];
 
       // Lọc bỏ user đã có enrollment (đã được duyệt bởi Nhân viên)
@@ -120,6 +122,9 @@ export default function StaffApprovals() {
     const agency = agencies.find(a => String(a.id) === sid);
     return agency ? (agency.name || agency.agent_name || agency.agentName) : ('Đại lý #' + sid);
   };
+
+  // ── Tìm user theo id (để lấy tên đại lý của hồ sơ enrollment) ──
+  const getUserById = (id) => allUsers.find(u => String(u.id) === String(id));
 
   // ── Duyệt tài khoản PENDING → kích hoạt + tạo hồ sơ học phí; tiền mặt → kích hoạt ngay ──
   const handleApproveAccount = async (user, rank = '', payment = null) => {
@@ -255,6 +260,8 @@ export default function StaffApprovals() {
           {approvalItems.map(item => {
             if (item.type === 'enrollment') {
               const enr = item.data;
+              const enrUser = getUserById(enr.student_id);
+              const enrAgencyName = enrUser ? getAgencyName(enrUser) : null;
               return (
                 <div key={item.key} className="card p-4 sm:p-5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -266,6 +273,7 @@ export default function StaffApprovals() {
                         <div>
                           <h3 className="font-bold text-gray-900">{enr.student_name || `Học viên #${enr.student_id}`}</h3>
                           <p className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+                            {enrAgencyName && <span className="flex items-center gap-1 text-blue-700 font-medium bg-blue-50 px-1.5 py-0.5 rounded"><Building2 className="w-3 h-3" />Đại lý: {enrAgencyName}</span>}
                             <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" />{enr.course_name || '—'}</span>
                             <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{enr.enrollment_code || ''}</span>
                           </p>
