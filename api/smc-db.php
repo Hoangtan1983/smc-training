@@ -2206,9 +2206,7 @@ if ($action === 'assign-course') {
         DB::execute("UPDATE enrollments SET approval_staff_by = ?, approval_staff_at = NOW(), approval_staff_name = ?, updated_at = NOW() WHERE id = ?",
             [$userId, $staff['full_name'] ?? '', $enrId]);
 
-        // Kích hoạt tài khoản học viên
-        DB::execute("UPDATE users SET status = 'active', updated_at = NOW() WHERE id = ?", [$studentId]);
-
+        // Học viên giữ trạng thái 'pending' — chỉ kích hoạt khi ghi nhận thanh toán (recordPaymentAndActivate).
         DB::commit();
     } catch (Exception $e) {
         DB::rollback();

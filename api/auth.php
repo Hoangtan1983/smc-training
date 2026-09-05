@@ -1218,9 +1218,12 @@ if (($parts[0] ?? '') === 'users' || (($parts[0] ?? '') === 'auth' && ($parts[1]
 
         $userCode = 'USR-' . date('Y') . '-' . strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
         $hash = $password ? password_hash($password, PASSWORD_BCRYPT) : null;
+        // Học viên tạo qua Admin/Staff vẫn phải chờ duyệt + nộp tiền → 'pending';
+        // các vai trò khác (teacher/staff/agency...) kích hoạt ngay.
+        $status = ($role === 'student') ? 'pending' : 'active';
         $newId = (int)DB::insert(
-            "INSERT INTO users (user_code, full_name, email, phone, password_hash, role, status) VALUES (?,?,?,?,?,?,'active')",
-            [$userCode, $fullName, $email, $phone, $hash, $role]
+            "INSERT INTO users (user_code, full_name, email, phone, password_hash, role, status) VALUES (?,?,?,?,?,?,?)",
+            [$userCode, $fullName, $email, $phone, $hash, $role, $status]
         );
 
         // Auto-create enrollment nếu có courseId
