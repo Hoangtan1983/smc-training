@@ -183,7 +183,7 @@ export default function StaffClasses() {
     loadData_();
   };
 
-  // ─── Lấy danh sách HV đủ điều kiện xếp lớp (ACTIVE + paid + tương thích hạng + chưa có lớp) ───
+  // ─── Lấy danh sách HV đủ điều kiện xếp lớp (ACTIVE + hồ sơ đã duyệt + đã nộp học phí + tương thích hạng + chưa có lớp) ───
   const getEligibleStudents = (classId) => {
     const cls = classes.find(c => c.id === classId);
     const getEffectiveRank = (rank, courseId) => {
@@ -197,16 +197,31 @@ export default function StaffClasses() {
     // Tập hợp tất cả học viên đã có trong lớp nào đó (để loại khỏi danh sách xếp lớp)
     const studentsInAnyClass = new Set();
     classes.forEach(c => {
-      (c.student_ids || []).forEach(sid => studentsInAnyClass.add(sid));
+      (c.student_ids || []).forEach(sid => studentsInAnyClass.add(String(sid)));
+    });
+
+    // Map hồ sơ học phí theo học viên để kiểm tra "đã duyệt + đã nộp tiền"
+    const tuitionByStudent = {};
+    tuitions.forEach(t => {
+      const sid = String(t.studentId ?? t.student_id ?? '');
+      if (sid && !tuitionByStudent[sid]) tuitionByStudent[sid] = t;
     });
 
     return allStudents.filter(s => {
-      // Chỉ cần học viên đã được kích hoạt (ACTIVE) là đủ điều kiện xếp lớp;
-      // không bắt buộc đóng đủ học phí (nộp một phần / miễn giảm / chưa có hồ sơ vẫn xếp lớp được).
+      // Tài khoản phải được kích hoạt (ACTIVE)
       if (s.status !== 'ACTIVE') return false;
 
       // Loại bỏ học viên đã được xếp vào lớp (bất kỳ lớp nào)
-      if (studentsInAnyClass.has(s.id)) return false;
+      if (studentsInAnyClass.has(String(s.id))) return false;
+
+      // Phải có hồ sơ học phí đã được duyệt (enrollment active/studying) và đã nộp tiền (không còn 'unpaid').
+      // Chưa duyệt (pending) hoặc chưa nộp tiền (unpaid) → không đủ điều kiện xếp lớp.
+      const t = tuitionByStudent[String(s.id)];
+      if (!t) return false;
+      const enrStatus = t.enrollment_status ?? t.enrollmentStatus ?? '';
+      if (enrStatus !== 'active' && enrStatus !== 'studying') return false;
+      const payStatus = t.payment_status ?? t.paymentStatus ?? t.status ?? 'unpaid';
+      if (payStatus === 'unpaid') return false;
 
       // Lọc theo hạng: chỉ hiển thị học viên có hạng tương thích với lớp
       if (classEffectiveRank) {
